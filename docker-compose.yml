@@ -1,0 +1,44 @@
+services:
+  users:
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
+    container_name: bolotext_users
+    env_file:
+      - services/users/.env
+    networks:
+      - bolotext-network
+    restart: always
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: bolotext_api_gateway
+    ports:
+      - 8000:8000
+    env_file:
+      - services/api-gateway/.env
+    environment:
+      USERS_SERVICE_URL: http://users:8001
+    depends_on:
+      - users
+    networks:
+      - bolotext-network
+    restart: always
+
+  # Stub only — see services/agents/src/agents_service/app.py. Kept in compose
+  # so the service boundary (its own container, network membership, health
+  # check) is real before any agent logic is built.
+  agents:
+    build:
+      context: .
+      dockerfile: services/agents/Dockerfile
+    container_name: bolotext_agents
+    networks:
+      - bolotext-network
+    restart: always
+
+networks:
+  bolotext-network:
+    driver: bridge
