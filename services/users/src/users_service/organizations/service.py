@@ -4,6 +4,7 @@ from common.errors import ConflictError, NotFoundError
 
 from users_service.core.security import hash_password
 from users_service.enums import OrganizationStatus, UserStatus
+from users_service.memberships import repository as membership_repo
 from users_service.organizations.model import Organization
 from users_service.organizations import repository as organization_repo
 from users_service.users import repository as user_repo
@@ -35,11 +36,10 @@ async def create_organization(
             email=admin_email,
             hashed_password=hash_password(admin_password),
             full_name=admin_full_name or admin_email,
-            role=Role.ADMIN,
-            organization_id=org.id,
             created_by=created_by,
             status=UserStatus.ACTIVE,
         )
+        await membership_repo.create(admin_user.id, org.id, Role.ADMIN, created_by=created_by)
 
     return org, admin_user
 

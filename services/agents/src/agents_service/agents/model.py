@@ -5,7 +5,7 @@ from beanie import Document
 from pydantic import Field
 from pymongo import IndexModel
 
-AgentStatus = Literal["draft", "published", "disabled"]
+AgentStatus = Literal["active", "inactive"]
 
 
 class Agent(Document):
@@ -19,9 +19,14 @@ class Agent(Document):
     user_id: str
     name: str
     description: str | None = None
-    status: AgentStatus = "draft"
+    # An agent is usable as soon as it's created — no draft/publish gate.
+    # See agents_service.agents.service.update_status/activate_agent/
+    # deactivate_agent and PATCH|POST /agents/{id}/status|activate|deactivate.
+    status: AgentStatus = "active"
 
-    deleted_at: datetime | None = None
+    # No soft-delete: DELETE /agents/{id} removes this document outright —
+    # see agents.service.delete_agent, which also cascades to every
+    # AgentConfig and SystemPromptVersion row for this agent.
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

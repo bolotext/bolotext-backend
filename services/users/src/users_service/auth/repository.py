@@ -5,8 +5,10 @@ from beanie import PydanticObjectId
 from users_service.auth.model import RefreshToken
 
 
-async def create_refresh_token(user_id: PydanticObjectId, token_hash: str, expires_at: datetime) -> RefreshToken:
-    record = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+async def create_refresh_token(
+    user_id: PydanticObjectId, token_hash: str, expires_at: datetime, organization_id: PydanticObjectId | None = None
+) -> RefreshToken:
+    record = RefreshToken(user_id=user_id, organization_id=organization_id, token_hash=token_hash, expires_at=expires_at)
     await record.insert()
     return record
 

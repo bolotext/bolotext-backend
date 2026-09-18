@@ -3,6 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from users_service.auth.model import RefreshToken
 from users_service.core.config import get_settings
+from users_service.memberships.model import OrganizationMembership
 from users_service.organizations.model import Organization
 from users_service.permissions.model import Permission, RolePermissionMapping
 from users_service.roles.model import RoleDoc
@@ -36,7 +37,15 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
     active_client = client or get_client()
     await init_beanie(
         database=active_client[settings.mongo_db_name],
-        document_models=[Organization, User, RefreshToken, RoleDoc, Permission, RolePermissionMapping],
+        document_models=[
+            Organization,
+            User,
+            OrganizationMembership,
+            RefreshToken,
+            RoleDoc,
+            Permission,
+            RolePermissionMapping,
+        ],
     )
 
 

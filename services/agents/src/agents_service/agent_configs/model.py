@@ -2,18 +2,33 @@
 aggregate — everything about an agent except its identity (see agents/model.py
 for the `agents` collection: id, org_id, user_id, name, description, status).
 
-One `AgentConfig` per `Agent`, edited section-by-section via each tab's own
-PATCH route (agents.service.update_section, dispatched through the SECTIONS
-table in agents/schema.py). Unlike the rest of this document, `system_prompt`
-(inside `prompt`) keeps its own bounded revision history — see
-prompt/version_model.py — rather than the whole config being versioned.
+One `AgentConfig` per (`Agent`, `environment`), edited section-by-section via
+each tab's own PATCH route (agents.service.update_section, dispatched through
+the SECTIONS table in agents/schema.py) — those routes always target
+`development`, the one environment a caller edits directly. `stage` and
+`production` are read-only snapshots, written only by promotion (see
+agents.service.promote_environment / the /move-to-stage and /move-to-prod
+routes), never by a section PATCH. `prompt` has no PATCH route of its own
+any more (see prompt/router.py — every one of its fields is covered by a
+narrower, dedicated route instead), and also owns `pre_call_variables` and
+`dynamic_message`, not this document directly — see prompt/schema.py.
+`prompt.system_prompt` is plain text, edited and stored directly — the
+`system_prompt_versions` collection (see prompt/version_model.py) is only
+an optional, independent library of reusable snippets, not a revision
+history for this field. `analytics.post_call_trigger` (see
+post_call_trigger/schema.py — it replaced `others.post_call_trigger_url`)
+similarly gets its own POST/GET/PATCH /agents/{id}/post-call-trigger
+routes on top of the generic `analytics` PATCH, not a section of its own.
 """
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from beanie import Document, PydanticObjectId
 from pydantic import Field
 from pymongo import IndexModel
+
+Environment = Literal["development", "stage", "production"]
 
 from agents_service.actions.schema import ActionsSettings
 from agents_service.analytics.schema import AnalyticsSettings
@@ -30,6 +45,7 @@ from agents_service.voice_persona.schema import VoicePersonaSection
 
 class AgentConfig(Document):
     agent_id: PydanticObjectId
+    environment: Environment = "development"
 
     # The part of the old "Agent Details" tab that isn't identity (see
     # agents/service.update_agent_details, which splits a single PATCH
@@ -55,4 +71,4 @@ class AgentConfig(Document):
 
     class Settings:
         name = "agent_configs"
-        indexes = [IndexModel("agent_id", unique=True)]
+        indexes = [IndexModel([("agent_id", 1), ("environment", 1)], unique=True)]

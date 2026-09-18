@@ -6,6 +6,12 @@ services:
     container_name: bolotext_users
     env_file:
       - services/users/.env
+    environment:
+      # Compose's `environment:` overrides `env_file:`, so this always wins
+      # even if the local .env (also used for `uv run` dev) says otherwise —
+      # this stack is never allowed to run with --reload.
+      ENVIRONMENT: production
+      WORKERS: ${WORKERS:-4}
     networks:
       - bolotext-network
     restart: always
@@ -22,6 +28,8 @@ services:
     environment:
       USERS_SERVICE_URL: http://users:8001
       AGENTS_SERVICE_URL: http://agents:8002
+      ENVIRONMENT: production
+      WORKERS: ${WORKERS:-4}
     depends_on:
       - users
       - agents
@@ -38,6 +46,8 @@ services:
       - services/agents/.env
     environment:
       USERS_SERVICE_URL: http://users:8001
+      ENVIRONMENT: production
+      WORKERS: ${WORKERS:-4}
     depends_on:
       - users
     networks:

@@ -22,6 +22,7 @@ def _route_map() -> dict[str, str | None]:
         "users": settings.users_service_url,
         "internal": settings.users_service_url,
         "agents": settings.agents_service_url,  # None until that service exists
+        "providers": settings.agents_service_url,  # agents_service.providers — LLM/STT/TTS provider+model registry
     }
 
 

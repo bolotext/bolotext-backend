@@ -1,4 +1,7 @@
-"""User data access.
+"""User identity data access. Role now lives on OrganizationMembership, not
+User — every function here that returns a role does so by joining against
+`users_service.memberships`, keyed by whichever organization is in scope for
+the caller (see users_service.users.service).
 
 Every read/list function that is meant to be reachable by an org-scoped caller
 (Admin/Developer/QA) takes `organization_id` as a required, non-optional
@@ -12,9 +15,10 @@ from datetime import datetime, timezone
 
 from beanie import PydanticObjectId
 from beanie.operators import Or, RegEx
-from common.enums import Role
 
 from users_service.enums import UserStatus
+from users_service.memberships import repository as membership_repo
+from users_service.memberships.model import OrganizationMembership
 from users_service.users.model import User
 
 
@@ -22,17 +26,15 @@ async def create_user(
     email: str,
     hashed_password: str,
     full_name: str,
-    role: Role,
-    organization_id: PydanticObjectId | None,
     created_by: PydanticObjectId | None,
     status: UserStatus = UserStatus.ACTIVE,
+    is_super_admin: bool = False,
 ) -> User:
     user = User(
-        organization_id=organization_id,
         email=email,
         hashed_password=hashed_password,
         full_name=full_name,
-        role=role,
+        is_super_admin=is_super_admin,
         status=status,
         created_by=created_by,
     )
@@ -45,12 +47,31 @@ async def get_by_email(email: str) -> User | None:
     return await User.find_one(User.email == email)
 
 
-async def get_by_id_scoped(user_id: PydanticObjectId, organization_id: PydanticObjectId) -> User | None:
-    return await User.find_one(User.id == user_id, User.organization_id == organization_id)
+async def get_by_id_scoped(
+    user_id: PydanticObjectId, organization_id: PydanticObjectId
+) -> tuple[User, OrganizationMembership] | None:
+    """Confirms `user_id` has a membership in `organization_id` before
+    returning it, and hands back that membership (role + org id) along with
+    the user — there's no other way to answer "what role does this user
+    have here" now that role isn't a plain field on User.
+    """
+    membership = await membership_repo.get(user_id, organization_id)
+    if membership is None:
+        return None
+    user = await User.get(user_id)
+    if user is None:
+        return None
+    return user, membership
 
 
 async def get_by_id_global(user_id: PydanticObjectId) -> User | None:
     return await User.get(user_id)
+
+
+async def get_many_by_ids(user_ids: list[PydanticObjectId]) -> list[User]:
+    if not user_ids:
+        return []
+    return await User.find({"_id": {"$in": user_ids}}).to_list()
 
 
 def _search_condition(search: str) -> Or:
@@ -64,13 +85,23 @@ async def list_by_org(
     limit: int = 50,
     search: str | None = None,
     status: UserStatus | None = None,
-) -> list[User]:
-    conditions = [User.organization_id == organization_id]
+) -> list[tuple[User, OrganizationMembership]]:
+    """Every member of `organization_id`, paired with their membership there.
+    Paging/search/status are applied to the joined (user, membership) pairs,
+    not just the membership rows, since `search` filters on User fields.
+    """
+    memberships = await membership_repo.list_for_org(organization_id, skip=0, limit=0) or []
+    membership_by_user_id = {m.user_id: m for m in memberships}
+    if not membership_by_user_id:
+        return []
+
+    conditions = [{"_id": {"$in": list(membership_by_user_id)}}]
     if status is not None:
         conditions.append(User.status == status)
     if search:
         conditions.append(_search_condition(search))
-    return await User.find(*conditions).skip(skip).limit(limit).to_list()
+    users = await User.find(*conditions).skip(skip).limit(limit).to_list()
+    return [(user, membership_by_user_id[user.id]) for user in users]
 
 
 async def list_all(
@@ -79,6 +110,10 @@ async def list_all(
     search: str | None = None,
     status: UserStatus | None = None,
 ) -> list[User]:
+    """Cross-org listing (Super Admin only). There's no single "current org"
+    to resolve a role against here, so callers get identities only — see
+    users_service.users.service.list_users's SUPER_ADMIN branch.
+    """
     conditions = []
     if status is not None:
         conditions.append(User.status == status)
@@ -90,15 +125,12 @@ async def list_all(
 async def update_user(
     user: User,
     full_name: str | None = None,
-    role: Role | None = None,
     status: UserStatus | None = None,
     hashed_password: str | None = None,
     must_change_password: bool | None = None,
 ) -> User:
     if full_name is not None:
         user.full_name = full_name
-    if role is not None:
-        user.role = role
     if status is not None:
         user.status = status
     if hashed_password is not None:

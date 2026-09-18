@@ -9,7 +9,7 @@ class LLMSettings(BaseModel):
             "example": {
                 "provider_id": "openai",
                 "model_id": "gpt-4o-mini",
-                "temperature": 0.5,
+                "temperature": 0.2,
                 "max_tokens": 300,
                 "knowledge_base_ids": [],
             }
@@ -20,7 +20,7 @@ class LLMSettings(BaseModel):
     # draft agent can default-construct this section — see agents/service.py.
     provider_id: str = ""
     model_id: str = ""
-    temperature: float = 0.5
+    temperature: float = 0.2
     max_tokens: int = 300
     knowledge_base_ids: list[str] = []
 

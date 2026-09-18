@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from agents_service.actions.schema import ActionsSettings, ActionsSettingsUpdate
+from agents_service.agent_configs.model import Environment
 from agents_service.agent_details.schema import AgentDetails
 from agents_service.agents.model import AgentStatus
 from agents_service.analytics.schema import AnalyticsSettings, AnalyticsSettingsUpdate
@@ -57,6 +58,10 @@ class AgentOut(BaseModel):
     user_id: str
     org_id: str | None
     status: AgentStatus
+    environment: Environment
+    # Not on AgentDetails: it's created English-only and configured afterwards
+    # only through PUT /agents/{id}/languages — see agents_service.languages.
+    languages: list[str]
     agent_details: AgentDetails
     prompt: AgentPrompt
     flow: AgentFlow
@@ -73,21 +78,52 @@ class AgentOut(BaseModel):
     updated_at: datetime
 
 
-class AgentReplace(BaseModel):
-    """Body for PUT /agents/{agent_id} — a full replace of every section.
-    `status` isn't included: publishing goes through the dedicated /publish
-    endpoint, not a blind full-document overwrite.
+class AgentIdentitySummary(BaseModel):
+    """The subset of "Agent Details" that lives on the Agent identity
+    document itself (see agents/model.py) — used only by AgentListItem below,
+    which deliberately excludes everything AgentConfig owns (region/
+    timezone/bot_type/languages/environment, and every builder-tab section).
     """
 
-    agent_details: AgentDetails
-    prompt: AgentPrompt = AgentPrompt()
-    flow: AgentFlow = AgentFlow()
-    transcriber: TranscriberSettings = TranscriberSettings()
-    llm: LLMSettings = LLMSettings()
-    voice_persona: VoicePersonaSection = VoicePersonaSection()
-    analytics: AnalyticsSettings = AnalyticsSettings()
-    others: OthersSettings = OthersSettings()
-    faq: FAQSettings = FAQSettings()
-    deployment: DeploymentSettings = DeploymentSettings()
-    actions: ActionsSettings = ActionsSettings()
-    mcp: MCPSettings = MCPSettings()
+    name: str
+    description: str | None = None
+
+
+class AgentListItem(BaseModel):
+    """One row of GET /agents. Unlike AgentOut, this never touches
+    AgentConfig at all — no builder-tab sections, no environment/languages/
+    region/timezone/bot_type — just the Agent identity document's own
+    fields, so listing agents doesn't cost one AgentConfig read per agent for
+    data a list view doesn't need. Fetch GET /agents/{id} for the full
+    merged view.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    org_id: str | None
+    status: AgentStatus
+    agent_details: AgentIdentitySummary
+    created_at: datetime
+    updated_at: datetime
+
+
+class EnvironmentSummary(BaseModel):
+    """One row of GET /agents/{agent_id}/environments — lets a client show all
+    three environments (and when each was last promoted/edited) without
+    fetching each one's full config.
+    """
+
+    environment: Environment
+    exists: bool  # False until the environment has ever been populated (a promotion, for stage/production)
+    updated_at: datetime | None = None
+
+
+class AgentStatusUpdate(BaseModel):
+    """Body for PATCH /agents/{agent_id}/status. POST .../activate and
+    .../deactivate are shortcuts for the two possible values — all three
+    routes go through agents.service.update_status.
+    """
+
+    status: AgentStatus

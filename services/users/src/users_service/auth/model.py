@@ -7,6 +7,11 @@ from pymongo import IndexModel
 
 class RefreshToken(Document):
     user_id: PydanticObjectId
+    # Which org session this refresh token is pinned to (None for a Super
+    # Admin session) — /auth/refresh re-mints the access token for this same
+    # org, so switching orgs (see auth/service.py::switch_organization)
+    # always issues a fresh refresh token rather than mutating this one.
+    organization_id: PydanticObjectId | None = None
     token_hash: str
     expires_at: datetime
     revoked: bool = False

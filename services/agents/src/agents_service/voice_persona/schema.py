@@ -5,40 +5,34 @@ from pydantic import BaseModel, ConfigDict
 from agents_service.core.partial import partial_model
 
 
-class VoicePersona(BaseModel):
+class VoicePersonaSection(BaseModel):
+    """A single voice-persona configuration for the agent — not a list to
+    pick from; one agent has one voice.
+    """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "persona_id": "persona-1",
-                "name": "Neha",
                 "gender": "female",
                 "provider_id": "elevenlabs",
                 "voice_id": "21m00Tcm4TlvDq8ikWAM",
-                "language": "en-IN",
                 "rate_of_speech": 1.0,
-                "use_background_audio": False,
-                "background_audio_path": None,
-                "background_audio_volume": 0.2,
-                "is_default": True,
+                "use_ambient_sound": False,
+                "ambient_sound_volume": 0.2,
+                "ambient_sound_type": None,
             }
         }
     )
 
-    persona_id: str
-    name: str
     gender: Literal["male", "female", "neutral"] | None = None
-    provider_id: str
-    voice_id: str
-    language: str = "en-IN"
+    # provider_id/voice_id default to "" (not bare required strs) so a fresh
+    # draft agent can default-construct this section — see agents/service.py.
+    provider_id: str = ""
+    voice_id: str = ""
     rate_of_speech: float = 1.0
-    use_background_audio: bool = False
-    background_audio_path: str | None = None
-    background_audio_volume: float = 0.2
-    is_default: bool = True
-
-
-class VoicePersonaSection(BaseModel):
-    personas: list[VoicePersona] = []
+    use_ambient_sound: bool = False
+    ambient_sound_volume: float = 0.2
+    ambient_sound_type: str | None = None
 
 
 VoicePersonaSectionUpdate = partial_model(VoicePersonaSection)

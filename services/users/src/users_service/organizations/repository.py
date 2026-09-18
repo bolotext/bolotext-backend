@@ -18,6 +18,12 @@ async def get_by_id(organization_id: PydanticObjectId) -> Organization | None:
     return await Organization.get(organization_id)
 
 
+async def get_many_by_ids(organization_ids: list[PydanticObjectId]) -> list[Organization]:
+    if not organization_ids:
+        return []
+    return await Organization.find({"_id": {"$in": organization_ids}}).to_list()
+
+
 async def get_by_slug(slug: str) -> Organization | None:
     return await Organization.find_one(Organization.slug == slug)
 

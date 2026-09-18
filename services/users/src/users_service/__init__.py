@@ -4,9 +4,26 @@ import logging
 
 import uvicorn
 
+from users_service.core.config import get_settings
+
 
 def _serve(log_level: str) -> None:
-    uvicorn.run("users_service.app:app", host="0.0.0.0", port=8001, log_level=log_level.lower())
+    settings = get_settings()
+    # Reload is derived from ENVIRONMENT, never its own independent flag —
+    # that's what makes "accidentally on in production" structurally
+    # impossible rather than just discouraged. Reload mode is always
+    # single-process, so WORKERS is only honored once it's off.
+    reload = settings.environment.lower() == "development"
+    workers = 1 if reload else settings.workers
+
+    uvicorn.run(
+        "users_service.app:app",
+        host=settings.host,
+        port=settings.port,
+        log_level=log_level.lower(),
+        reload=reload,
+        workers=workers,
+    )
 
 
 async def _seed() -> None:

@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from agents_service.core.partial import partial_model
+from agents_service.post_call_trigger.schema import PostCallTriggerSettings
 
 
 class ExtractionField(BaseModel):
@@ -40,6 +41,12 @@ class AnalyticsSettings(BaseModel):
                         "is_required": True,
                     }
                 ],
+                "post_call_trigger": {
+                    "post_call_trigger_enabled": True,
+                    "method": "POST",
+                    "url": "https://example.com/webhooks/call-ended",
+                    "headers": {"Authorization": "Bearer xxx"},
+                },
             }
         }
     )
@@ -48,6 +55,12 @@ class AnalyticsSettings(BaseModel):
     disposition_prompt: str | None = None
     post_call_extraction_enabled: bool = False
     extraction_fields: list[ExtractionField] = []
+    # A webhook the platform calls once a call ends — see
+    # post_call_trigger/schema.py's docstring. Has its own
+    # POST/GET/PATCH /agents/{id}/post-call-trigger routes (see
+    # agents_service.post_call_trigger.router) alongside the generic
+    # PATCH /agents/{id}/analytics this section already gets.
+    post_call_trigger: PostCallTriggerSettings = PostCallTriggerSettings()
 
 
 AnalyticsSettingsUpdate = partial_model(AnalyticsSettings)

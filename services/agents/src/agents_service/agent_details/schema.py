@@ -9,7 +9,6 @@ class AgentDetails(BaseModel):
             "example": {
                 "name": "Loan Collections Agent",
                 "description": "Outbound voice agent for early-bucket loan repayment reminders.",
-                "languages": ["hi-IN", "en-IN"],
                 "region": "asia",
                 "timezone": "Asia/Kolkata",
                 "bot_type": ["voice"],
@@ -17,9 +16,11 @@ class AgentDetails(BaseModel):
         }
     )
 
+    # Deliberately not here: an agent is created English-only (AgentConfig.languages
+    # defaults to ["en-IN"]) and languages are configured afterwards, only through
+    # the dedicated PUT /agents/{id}/languages — see agents_service.languages.
     name: str
     description: str | None = None
-    languages: list[str] = ["en-IN"]
     region: str = "asia"
     timezone: str = "Asia/Kolkata"
     bot_type: list[str] = ["voice"]

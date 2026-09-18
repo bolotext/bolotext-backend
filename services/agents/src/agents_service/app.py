@@ -7,6 +7,7 @@ from common.schemas import SuccessResponse
 from fastapi import FastAPI
 
 from agents_service.actions.router import router as actions_router
+from agents_service.agent_assignments.router import router as agent_assignments_router
 from agents_service.agent_details.router import router as agent_details_router
 from agents_service.agents.router import router as agents_router
 from agents_service.analytics.router import router as analytics_router
@@ -14,11 +15,15 @@ from agents_service.core.config import get_settings
 from agents_service.core.http_client import close_http_client
 from agents_service.db.mongodb import close_db, get_client, init_db
 from agents_service.deployment.router import router as deployment_router
+from agents_service.dynamic_message.router import router as dynamic_message_router
 from agents_service.faq.router import router as faq_router
 from agents_service.flow.router import router as flow_router
+from agents_service.languages.router import router as languages_router
 from agents_service.llm.router import router as llm_router
 from agents_service.mcp.router import router as mcp_router
 from agents_service.others.router import router as others_router
+from agents_service.post_call_trigger.router import router as post_call_trigger_router
+from agents_service.precall_variables.router import router as precall_variables_router
 from agents_service.prompt.router import router as prompt_router
 from agents_service.providers.router import router as providers_router
 from agents_service.transcriber.router import router as transcriber_router
@@ -46,7 +51,10 @@ def create_app() -> FastAPI:
     # (and, for prompt, the /test render endpoint) — see agents/model.py's
     # docstring for why the split follows the agent-builder's tabs.
     app.include_router(agents_router, prefix=api_v1)
+    app.include_router(agent_assignments_router, prefix=api_v1)
     app.include_router(agent_details_router, prefix=api_v1)
+    app.include_router(languages_router, prefix=api_v1)
+    app.include_router(precall_variables_router, prefix=api_v1)
     app.include_router(prompt_router, prefix=api_v1)
     app.include_router(flow_router, prefix=api_v1)
     app.include_router(transcriber_router, prefix=api_v1)
@@ -56,6 +64,8 @@ def create_app() -> FastAPI:
     app.include_router(others_router, prefix=api_v1)
     app.include_router(faq_router, prefix=api_v1)
     app.include_router(deployment_router, prefix=api_v1)
+    app.include_router(dynamic_message_router, prefix=api_v1)
+    app.include_router(post_call_trigger_router, prefix=api_v1)
     app.include_router(actions_router, prefix=api_v1)
     app.include_router(mcp_router, prefix=api_v1)
     app.include_router(providers_router, prefix=api_v1)

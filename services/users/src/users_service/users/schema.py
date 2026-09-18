@@ -31,10 +31,15 @@ class UserSelfUpdate(BaseModel):
 
 class UserOut(BaseModel):
     id: str
+    # organization_id/role reflect the membership in scope for this response
+    # (the caller's current org, or the org just acted on) — a user with no
+    # resolvable single-org context (e.g. a Super Admin's cross-org listing)
+    # gets both as None. See users_service.users.service.
     organization_id: str | None
     email: EmailStr
     full_name: str
-    role: Role
+    role: Role | None
+    is_super_admin: bool
     status: UserStatus
     must_change_password: bool
     created_by: str | None

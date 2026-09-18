@@ -16,9 +16,13 @@ REFRESH_TOKEN_TYPE = "refresh"
 
 @dataclass(frozen=True)
 class AccessTokenClaims:
+    """Identity + which org session this is — never a role. Role is
+    per-organization membership now, so it's resolved fresh from the
+    Users service on every request rather than trusted from a token claim.
+    """
+
     user_id: str
     organization_id: str | None
-    role: str
 
 
 def decode_token(token: str, secret: str, algorithm: str) -> dict[str, Any]:
@@ -34,5 +38,4 @@ def decode_access_token(token: str, secret: str, algorithm: str) -> AccessTokenC
     return AccessTokenClaims(
         user_id=payload["sub"],
         organization_id=payload.get("organization_id"),
-        role=payload["role"],
     )

@@ -4,6 +4,7 @@ from common.log_utils import setup_logger
 from users_service.core.config import get_settings
 from users_service.core.security import hash_password
 from users_service.enums import UserStatus
+from users_service.memberships import repository as membership_repo
 from users_service.permissions.repository import PermissionRepository
 from users_service.roles.repository import RoleRepository
 from users_service.users.model import User
@@ -22,7 +23,7 @@ ROLE_DESCRIPTIONS: dict[Role, str] = {
 # calls in each module's router.
 ROLE_PERMISSIONS: dict[Role, list[str]] = {
     Role.SUPER_ADMIN: ["*"],
-    Role.ADMIN: ["user.*"],
+    Role.ADMIN: ["user.*", "membership.*"],
     Role.DEVELOPER: ["user.view"],
     Role.QA: [],
 }
@@ -37,6 +38,11 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "organization.view": "View organizations.",
     "organization.update": "Update an organization.",
     "organization.*": "All organization permissions.",
+    "membership.create": "Add a user to an organization.",
+    "membership.view": "View an organization's members.",
+    "membership.update": "Change a member's role within an organization.",
+    "membership.delete": "Remove a member from an organization.",
+    "membership.*": "All membership permissions.",
     "*": "All permissions (platform-level).",
 }
 
@@ -83,24 +89,53 @@ async def seed_bootstrap_super_admin() -> None:
         logger.info("No bootstrap super admin configured, skipping.")
         return
 
-    existing = await User.find_one(
-        User.organization_id == None,  # noqa: E711 - Beanie query operator requires `==`
-        User.email == settings.bootstrap_super_admin_email,
-    )
+    existing = await User.find_one(User.email == settings.bootstrap_super_admin_email)
     if existing is not None:
         logger.info("Bootstrap super admin already exists, skipping.")
         return
 
     await User(
-        organization_id=None,
         email=settings.bootstrap_super_admin_email,
         hashed_password=hash_password(settings.bootstrap_super_admin_password),
         full_name=settings.bootstrap_super_admin_name,
-        role=Role.SUPER_ADMIN,
+        is_super_admin=True,
         status=UserStatus.ACTIVE,
         created_by=None,
     ).insert()
     logger.info("Bootstrap super admin created: %s", settings.bootstrap_super_admin_email)
+
+
+async def backfill_memberships() -> None:
+    """One-time, idempotent migration for pre-multi-org data: `User.role`/
+    `User.organization_id` used to live directly on the user document. Any
+    document still carrying those legacy fields (raw Mongo, since the Beanie
+    `User` model no longer declares them) gets converted to either
+    `is_super_admin=True` (legacy SUPER_ADMIN) or a matching
+    `OrganizationMembership` row, then has the legacy fields unset. Safe to
+    rerun: already-migrated documents have neither field and are skipped.
+    """
+    collection = User.get_pymongo_collection()
+    async for doc in collection.find({"$or": [{"role": {"$exists": True}}, {"organization_id": {"$exists": True}}]}):
+        legacy_role = doc.get("role")
+        legacy_org_id = doc.get("organization_id")
+        user_id = doc["_id"]
+
+        if legacy_role == Role.SUPER_ADMIN.value:
+            await collection.update_one(
+                {"_id": user_id}, {"$set": {"is_super_admin": True}, "$unset": {"role": "", "organization_id": ""}}
+            )
+            logger.info("Backfilled legacy SUPER_ADMIN user %s to is_super_admin=True", user_id)
+            continue
+
+        if legacy_role and legacy_org_id:
+            existing_membership = await membership_repo.get(user_id, legacy_org_id)
+            if existing_membership is None:
+                await membership_repo.create(user_id, legacy_org_id, Role(legacy_role), created_by=doc.get("created_by"))
+                logger.info(
+                    "Backfilled membership for user %s: org=%s role=%s", user_id, legacy_org_id, legacy_role
+                )
+
+        await collection.update_one({"_id": user_id}, {"$unset": {"role": "", "organization_id": ""}})
 
 
 async def seed_all() -> None:
@@ -108,3 +143,4 @@ async def seed_all() -> None:
     await seed_roles()
     await seed_permissions()
     await seed_bootstrap_super_admin()
+    await backfill_memberships()

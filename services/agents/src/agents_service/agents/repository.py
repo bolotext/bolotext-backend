@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from beanie import PydanticObjectId
-from beanie.operators import Set
+from beanie.operators import In
 
 from agents_service.agents.model import Agent, AgentStatus
 
@@ -13,16 +13,33 @@ async def create_agent(user_id: str, org_id: str | None, name: str, description:
 
 
 async def get_by_id(agent_id: PydanticObjectId) -> Agent | None:
-    agent = await Agent.get(agent_id)
-    if agent is None or agent.deleted_at is not None:
-        return None
-    return agent
+    return await Agent.get(agent_id)
 
 
 async def list_agents(
     user_id: str, skip: int = 0, limit: int = 50, status: AgentStatus | None = None
 ) -> list[Agent]:
-    conditions = [Agent.user_id == user_id, Agent.deleted_at == None]  # noqa: E711 - Beanie operator requires `==`
+    conditions = [Agent.user_id == user_id]
+    if status is not None:
+        conditions.append(Agent.status == status)
+    return await Agent.find(*conditions).skip(skip).limit(limit).to_list()
+
+
+async def list_by_org(
+    org_id: str | None, skip: int = 0, limit: int = 50, status: AgentStatus | None = None
+) -> list[Agent]:
+    conditions = [Agent.org_id == org_id]
+    if status is not None:
+        conditions.append(Agent.status == status)
+    return await Agent.find(*conditions).skip(skip).limit(limit).to_list()
+
+
+async def list_by_ids(
+    agent_ids: list[PydanticObjectId], skip: int = 0, limit: int = 50, status: AgentStatus | None = None
+) -> list[Agent]:
+    if not agent_ids:
+        return []
+    conditions = [In(Agent.id, agent_ids)]
     if status is not None:
         conditions.append(Agent.status == status)
     return await Agent.find(*conditions).skip(skip).limit(limit).to_list()
@@ -34,9 +51,9 @@ async def save(agent: Agent) -> Agent:
     return agent
 
 
-async def soft_delete(agent: Agent) -> Agent:
-    now = datetime.now(timezone.utc)
-    agent.deleted_at = now
-    agent.updated_at = now
-    await agent.update(Set({Agent.deleted_at: now, Agent.updated_at: now}))
-    return agent
+async def delete(agent: Agent) -> None:
+    """Hard delete — see agents.service.delete_agent for the full cascade
+    (AgentConfig rows across every environment, SystemPromptVersion rows);
+    this only removes the Agent identity document itself.
+    """
+    await agent.delete()

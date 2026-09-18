@@ -12,6 +12,7 @@ from users_service.auth.router import router as auth_router
 from users_service.core.config import get_settings
 from users_service.core.rate_limit import limiter, rate_limit_exceeded_handler
 from users_service.db.mongodb import close_db, get_client, init_db
+from users_service.memberships.router import router as memberships_router
 from users_service.organizations.router import router as organizations_router
 from users_service.users.router import router as users_router
 
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     api_v1 = "/api/v1"
     app.include_router(auth_router, prefix=api_v1)
     app.include_router(organizations_router, prefix=api_v1)
+    app.include_router(memberships_router, prefix=api_v1)
     app.include_router(users_router, prefix=api_v1)
     app.include_router(auth_internal_router, prefix=api_v1)
 

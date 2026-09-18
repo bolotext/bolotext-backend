@@ -8,8 +8,15 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "users-service"
+    # "development" is the only value that enables the auto-reloader (see
+    # users_service.main) — anything else (production, staging, ...) runs
+    # without it, so reload can't be switched on in prod by mistake.
     environment: str = "development"
     log_level: str = "INFO"
+    host: str = "0.0.0.0"  # noqa: S104 - intentional: this is a container-facing service, not a laptop-only tool
+    port: int = 8001
+    # Ignored outside production (reload mode is always single-process).
+    workers: int = 1
 
     # Mongo
     mongo_uri: str = "mongodb://localhost:27017"

@@ -1,6 +1,7 @@
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from agents_service.agent_assignments.model import AgentAssignment
 from agents_service.agent_configs.model import AgentConfig
 from agents_service.agents.model import Agent
 from agents_service.core.config import get_settings
@@ -34,7 +35,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
     active_client = client or get_client()
     await init_beanie(
         database=active_client[settings.mongo_db_name],
-        document_models=[Agent, AgentConfig, SystemPromptVersion],
+        document_models=[Agent, AgentConfig, SystemPromptVersion, AgentAssignment],
     )
 
 

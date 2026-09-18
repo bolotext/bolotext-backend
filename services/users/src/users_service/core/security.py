@@ -35,12 +35,16 @@ def _create_token(subject: str, token_type: str, expires_delta: timedelta, extra
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: str, organization_id: str | None, role: str) -> str:
+def create_access_token(user_id: str, organization_id: str | None) -> str:
+    """Role is deliberately not a claim here — it's per-organization
+    membership now, so it's resolved fresh on every request instead of
+    trusted from the token. See users_service.core.deps.get_current_auth.
+    """
     return _create_token(
         subject=user_id,
         token_type=ACCESS_TOKEN_TYPE,
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
-        extra_claims={"organization_id": organization_id, "role": role},
+        extra_claims={"organization_id": organization_id},
     )
 
 

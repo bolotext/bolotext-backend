@@ -35,6 +35,16 @@ RUN chmod +x /app/services/users/entrypoint.sh
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/services/users/src:/app/libs/common/src"
 
+# Production posture by default: no --reload (users_service/__init__.py:_serve
+# only enables it when ENVIRONMENT=development), a real worker count instead
+# of the single-process dev default. Both are still overridable at `docker
+# run -e` / compose `environment:` time — this is just a safe default so the
+# image never accidentally runs dev-mode if someone forgets to set it.
+ENV ENVIRONMENT=production
+ENV HOST=0.0.0.0
+ENV PORT=8001
+ENV WORKERS=4
+
 WORKDIR /app/services/users
 EXPOSE 8001
 ENTRYPOINT ["./entrypoint.sh"]

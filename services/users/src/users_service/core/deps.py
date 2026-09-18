@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from users_service.core.security import ACCESS_TOKEN_TYPE, decode_own_token
 from users_service.enums import UserStatus
+from users_service.memberships import repository as membership_repo
 from users_service.permissions.service import PermissionService
 from users_service.users.model import User
 
@@ -21,23 +22,24 @@ _permission_service = PermissionService()
 
 @dataclass(frozen=True)
 class AuthContext:
+    """`organization_id`/`role` are resolved once per request in
+    get_current_auth — never trusted from a stale JWT claim, and never a
+    plain property of `user` any more, since role is per-organization
+    membership, not a field on User. `organization_id` is the org this
+    *session* (access token) is scoped to (None only for a Super Admin).
+    """
+
     user: User
+    organization_id: PydanticObjectId | None
+    role: Role
 
     @property
     def user_id(self) -> PydanticObjectId:
         return self.user.id
 
     @property
-    def organization_id(self) -> PydanticObjectId | None:
-        return self.user.organization_id
-
-    @property
-    def role(self) -> Role:
-        return self.user.role
-
-    @property
     def is_super_admin(self) -> bool:
-        return self.role == Role.SUPER_ADMIN
+        return self.user.is_super_admin
 
 
 async def get_current_auth(
@@ -62,13 +64,31 @@ async def get_current_auth(
         raise UnauthorizedError("Invalid token subject")
 
     # Re-read the user on every request (never trust stale JWT claims for
-    # role/status): this makes disable-user and role-change take effect
-    # immediately instead of waiting out the access token's lifetime.
+    # status): this makes disable-user take effect immediately instead of
+    # waiting out the access token's lifetime.
     user = await User.get(user_id)
     if user is None or user.status != UserStatus.ACTIVE:
         raise UnauthorizedError("User is not active")
 
-    return AuthContext(user=user)
+    if user.is_super_admin:
+        return AuthContext(user=user, organization_id=None, role=Role.SUPER_ADMIN)
+
+    organization_id_claim = payload.get("organization_id")
+    if not organization_id_claim:
+        raise UnauthorizedError("Access token has no organization context")
+    try:
+        organization_id = PydanticObjectId(organization_id_claim)
+    except Exception:
+        raise UnauthorizedError("Invalid organization context")
+
+    # Role is never trusted from the token — always resolved fresh from
+    # membership, so a role change (or removal from the org) takes effect
+    # on the very next request, not when the token happens to expire.
+    membership = await membership_repo.get(user_id, organization_id)
+    if membership is None:
+        raise UnauthorizedError("You no longer have access to this organization")
+
+    return AuthContext(user=user, organization_id=organization_id, role=membership.role)
 
 
 def require_role(*allowed_roles: Role):
