@@ -21,20 +21,25 @@ services:
       - services/api-gateway/.env
     environment:
       USERS_SERVICE_URL: http://users:8001
+      AGENTS_SERVICE_URL: http://agents:8002
     depends_on:
       - users
+      - agents
     networks:
       - bolotext-network
     restart: always
 
-  # Stub only — see services/agents/src/agents_service/app.py. Kept in compose
-  # so the service boundary (its own container, network membership, health
-  # check) is real before any agent logic is built.
   agents:
     build:
       context: .
       dockerfile: services/agents/Dockerfile
     container_name: bolotext_agents
+    env_file:
+      - services/agents/.env
+    environment:
+      USERS_SERVICE_URL: http://users:8001
+    depends_on:
+      - users
     networks:
       - bolotext-network
     restart: always

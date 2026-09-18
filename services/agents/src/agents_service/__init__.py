@@ -5,7 +5,7 @@ import uvicorn
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="bolotext Agents microservice (stub)")
+    parser = argparse.ArgumentParser(description="bolotext Agents microservice")
     parser.add_argument("--log-level", default="info")
     args = parser.parse_args()
 

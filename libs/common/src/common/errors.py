@@ -41,6 +41,17 @@ class BadRequestError(AppError):
         super().__init__("BAD_REQUEST", message, status.HTTP_400_BAD_REQUEST, details)
 
 
+class UnprocessableEntityError(AppError):
+    """A request body that parses fine structurally but fails a business-rule
+    check applied at save time (e.g. a prompt referencing an undeclared
+    dynamic variable, or a publish-readiness check) — as opposed to
+    RequestValidationError, which FastAPI raises for structural/type errors.
+    """
+
+    def __init__(self, message: str = "Request could not be processed", details: dict | None = None):
+        super().__init__("UNPROCESSABLE_ENTITY", message, status.HTTP_422_UNPROCESSABLE_ENTITY, details)
+
+
 class TooManyRequestsError(AppError):
     def __init__(self, message: str = "Too many requests", details: dict | None = None):
         super().__init__("TOO_MANY_REQUESTS", message, status.HTTP_429_TOO_MANY_REQUESTS, details)

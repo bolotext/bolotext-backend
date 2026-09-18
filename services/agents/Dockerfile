@@ -1,5 +1,4 @@
 # Build context is the repo root (uv workspace): `docker build -f services/agents/Dockerfile .`
-# NOTE: this service is a health-check stub only — see agents_service/app.py.
 FROM python:3.12-slim AS base
 WORKDIR /app
 

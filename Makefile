@@ -1,4 +1,4 @@
-.PHONY: install test seed run-users run-gateway run-agents docker-build docker-up docker-down docker-restart
+.PHONY: install test test-agents seed run-users run-gateway run-agents docker-build docker-up docker-down docker-restart
 
 install:
 	@echo 'Installing all workspace packages with uv'
@@ -7,6 +7,10 @@ install:
 test:
 	@echo 'Running the Users service test suite'
 	uv run --package users-service pytest services/users/tests
+
+test-agents:
+	@echo 'Running the Agents service test suite'
+	uv run --package agents-service pytest services/agents/tests
 
 seed:
 	@echo 'Seeding roles and the bootstrap Super Admin (Users service)'
@@ -21,7 +25,7 @@ run-gateway:
 	cd services/api-gateway && uv run python main.py
 
 run-agents:
-	@echo 'Running the Agents service stub locally on :8002'
+	@echo 'Running the Agents service locally on :8002 (expects a reachable MongoDB and the Users service, see services/agents/.env)'
 	cd services/agents && uv run python main.py
 
 docker-build:
