@@ -1,11 +1,14 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents_service.core.partial import partial_model
 
 
 class VoicemailDetectionConfig(BaseModel):
+    """Whether/how the agent detects it has reached voicemail on an
+    outbound call and what it says if so."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -16,12 +19,14 @@ class VoicemailDetectionConfig(BaseModel):
         }
     )
 
-    enabled: bool = False
-    max_detection_retries: int = 2
-    voicemail_response: str | None = None
+    enabled: bool = Field(False, description="Whether the agent attempts to detect voicemail on outbound calls.")
+    max_detection_retries: int = Field(2, description="Maximum number of detection attempts before giving up.")
+    voicemail_response: str | None = Field(None, description="Message the agent leaves if it detects voicemail.")
 
 
 class CallTransferConfig(BaseModel):
+    """Whether/how the agent can transfer a call to a human specialist."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -33,10 +38,10 @@ class CallTransferConfig(BaseModel):
         }
     )
 
-    enabled: bool = False
-    default_transfer_message: str | None = None
-    tta_type: Literal["phone", "sip"] = "phone"
-    send_transcript_with_transfer: bool = False
+    enabled: bool = Field(False, description="Whether the agent can transfer calls to a human.")
+    default_transfer_message: str | None = Field(None, description="Message the agent says to the caller before transferring.")
+    tta_type: Literal["phone", "sip"] = Field("phone", description="Transport used to reach the transfer target: a phone number or a SIP endpoint.")
+    send_transcript_with_transfer: bool = Field(False, description="Whether the call transcript so far is sent along with the transfer.")
 
 
 class OthersSettings(BaseModel):
@@ -54,8 +59,8 @@ class OthersSettings(BaseModel):
         }
     )
 
-    voicemail_detection: VoicemailDetectionConfig | None = None
-    call_transfer: CallTransferConfig | None = None
+    voicemail_detection: VoicemailDetectionConfig | None = Field(None, description="Voicemail detection settings; unset disables the feature.")
+    call_transfer: CallTransferConfig | None = Field(None, description="Call transfer settings; unset disables the feature.")
 
 
 OthersSettingsUpdate = partial_model(OthersSettings)

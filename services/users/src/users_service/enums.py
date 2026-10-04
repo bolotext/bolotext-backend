@@ -7,11 +7,15 @@ from enum import StrEnum
 
 
 class OrganizationStatus(StrEnum):
+    """Lifecycle state of a tenant organization."""
+
     ACTIVE = "active"
     SUSPENDED = "suspended"
 
 
 class UserStatus(StrEnum):
+    """Lifecycle state of a user account."""
+
     ACTIVE = "active"
     INVITED = "invited"
     DISABLED = "disabled"

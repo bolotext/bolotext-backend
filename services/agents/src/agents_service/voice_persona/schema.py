@@ -1,13 +1,14 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents_service.core.partial import partial_model
 
 
 class VoicePersonaSection(BaseModel):
     """A single voice-persona configuration for the agent — not a list to
-    pick from; one agent has one voice.
+    pick from; one agent has one voice. See `GET /providers/tts` for valid
+    `provider_id`/`voice_id` combinations.
     """
 
     model_config = ConfigDict(
@@ -24,15 +25,15 @@ class VoicePersonaSection(BaseModel):
         }
     )
 
-    gender: Literal["male", "female", "neutral"] | None = None
+    gender: Literal["male", "female", "neutral"] | None = Field(None, description="Voice gender, used to help pick/filter a `voice_id`.")
     # provider_id/voice_id default to "" (not bare required strs) so a fresh
     # draft agent can default-construct this section — see agents/service.py.
-    provider_id: str = ""
-    voice_id: str = ""
-    rate_of_speech: float = 1.0
-    use_ambient_sound: bool = False
-    ambient_sound_volume: float = 0.2
-    ambient_sound_type: str | None = None
+    provider_id: str = Field("", description="TTS provider id, e.g. `elevenlabs`. See GET /providers/tts for valid values.")
+    voice_id: str = Field("", description="Voice id offered by `provider_id`.")
+    rate_of_speech: float = Field(1.0, description="Speaking rate multiplier; 1.0 is the provider's normal pace.")
+    use_ambient_sound: bool = Field(False, description="Whether background ambient sound is mixed into the agent's speech.")
+    ambient_sound_volume: float = Field(0.2, description="Ambient sound mix volume, 0.0-1.0. Only used when `use_ambient_sound` is true.")
+    ambient_sound_type: str | None = Field(None, description="Which ambient sound to play, e.g. `office`. Only used when `use_ambient_sound` is true.")
 
 
 VoicePersonaSectionUpdate = partial_model(VoicePersonaSection)

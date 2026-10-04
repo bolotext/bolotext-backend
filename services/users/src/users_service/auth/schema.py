@@ -1,32 +1,41 @@
 from common.enums import Role
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"email": "user@example.com", "password": "<password>"}}
+    )
+
+    email: EmailStr = Field(description="The account's email address.")
+    password: str = Field(description="The account's password, in plain text over TLS.")
     # Only needed when the account belongs to more than one organization and
     # the first login attempt (without it) came back with `organizations`
     # instead of tokens.
-    organization_id: str | None = None
+    organization_id: str | None = Field(
+        default=None,
+        description="Which organization to log into. Only required on a second attempt, after a "
+        "first login without it returned `organizations` instead of tokens because the account "
+        "belongs to more than one.",
+    )
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(description="A refresh token previously issued by `POST /auth/login`.")
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(description="The refresh token to revoke.")
 
 
 class SwitchOrganizationRequest(BaseModel):
-    organization_id: str
+    organization_id: str = Field(description="The organization to switch the current session into.")
 
 
 class OrganizationChoice(BaseModel):
-    organization_id: str
-    name: str
-    role: Role
+    organization_id: str = Field(description="The organization's id.")
+    name: str = Field(description="The organization's display name.")
+    role: Role = Field(description="The caller's role within this organization.")
 
 
 class LoginResponse(BaseModel):
@@ -36,18 +45,22 @@ class LoginResponse(BaseModel):
     `organization_id` set.
     """
 
-    access_token: str | None = None
-    refresh_token: str | None = None
-    token_type: str = "bearer"
-    organizations: list[OrganizationChoice] | None = None
+    access_token: str | None = Field(default=None, description="Short-lived bearer token for authenticated requests. `null` when `organizations` is returned instead.")
+    refresh_token: str | None = Field(default=None, description="Long-lived token used with `POST /auth/refresh` to obtain a new access token. `null` when `organizations` is returned instead.")
+    token_type: str = Field(default="bearer", description="Always `\"bearer\"`.")
+    organizations: list[OrganizationChoice] | None = Field(
+        default=None,
+        description="Present instead of tokens when the account belongs to more than one "
+        "organization and the request didn't specify `organization_id`. Pick one and retry.",
+    )
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+    access_token: str = Field(description="Short-lived bearer token, scoped to the newly selected organization.")
+    refresh_token: str = Field(description="Long-lived token used with `POST /auth/refresh` to obtain a new access token.")
+    token_type: str = Field(default="bearer", description="Always `\"bearer\"`.")
 
 
 class AccessTokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    access_token: str = Field(description="Newly issued short-lived bearer token.")
+    token_type: str = Field(default="bearer", description="Always `\"bearer\"`.")

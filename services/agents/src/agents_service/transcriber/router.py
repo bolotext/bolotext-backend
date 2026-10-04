@@ -11,11 +11,31 @@ from agents_service.transcriber.schema import TranscriberSettingsUpdate
 router = APIRouter(prefix="/agents", tags=["agents:transcriber"])
 
 
-@router.patch("/{agent_id}/transcriber", response_model=SuccessResponse[AgentOut])
+@router.patch(
+    "/{agent_id}/transcriber",
+    response_model=SuccessResponse[AgentOut],
+    summary="Update an agent's transcriber (ASR) settings",
+)
 async def update_transcriber(
     agent_id: PydanticObjectId,
     payload: TranscriberSettingsUpdate,
     auth: AuthContext = Depends(get_current_auth),
 ) -> dict:
+    """Partially updates the speech-to-text provider/model and tuning
+    settings (barge-in, noise handling, silence timeouts, DTMF) for the
+    agent's `development` environment. Only fields present in the request
+    body are changed; omitted fields keep their current value. Returns the
+    full, merged agent.
+
+    **Auth:** bearer JWT required; caller must have access to this agent
+    (own it, or be an Admin/QA in its organization — see `GET /agents/{id}`).
+
+    **Errors:**
+    - `NOT_FOUND` — no agent with this ID exists for the caller.
+    - `FORBIDDEN` — caller isn't authorized to write to this agent (e.g. a
+      Developer without this agent assigned to them).
+    - `UNPROCESSABLE_ENTITY` — the payload fails validation against the
+      transcriber settings schema.
+    """
     agent, config = await agent_service.update_section(agent_id, auth, "transcriber", payload.model_dump(exclude_unset=True))
     return success_response(message="Agent transcriber updated", data=agent_service.to_out(agent, config))

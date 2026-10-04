@@ -1,7 +1,10 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelInfo(BaseModel):
+    """One model (or, under a TTS provider, one voice) offered by a
+    provider — an entry in `ProviderInfo.models`."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -15,15 +18,17 @@ class ModelInfo(BaseModel):
         }
     )
 
-    model_id: str
-    label: str
-    description: str | None = None
-    is_active: bool = True
-    function_calling: bool = False
-    supported_languages: list[str] = []
+    model_id: str = Field(..., description="Model id to set as `model_id` on the relevant agent section (llm/transcriber/voice_persona).")
+    label: str = Field(..., description="Human-readable name for display in the agent builder.")
+    description: str | None = Field(None, description="Short description of the model's characteristics or intended use.")
+    is_active: bool = Field(True, description="Whether this model is currently selectable; inactive models are shown for reference only.")
+    function_calling: bool = Field(False, description="Whether this model supports function/tool calling (relevant to LLM models only).")
+    supported_languages: list[str] = Field([], description="Language codes this model supports.")
 
 
 class ProviderInfo(BaseModel):
+    """One LLM/STT/TTS provider and the models (or voices) it offers."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -44,14 +49,17 @@ class ProviderInfo(BaseModel):
         }
     )
 
-    provider_id: str
-    label: str
-    supports_function_calling: bool = False
-    multilingual: bool = False
-    models: list[ModelInfo]
+    provider_id: str = Field(..., description="Provider id to set as `provider_id` on the relevant agent section (llm/transcriber/voice_persona).")
+    label: str = Field(..., description="Human-readable name for display in the agent builder.")
+    supports_function_calling: bool = Field(False, description="Whether any model from this provider supports function/tool calling (relevant to LLM providers only).")
+    multilingual: bool = Field(False, description="Whether this provider supports multiple languages.")
+    models: list[ModelInfo] = Field(..., description="Models (LLM/STT) or voices (TTS) this provider offers.")
 
 
 class ProviderCatalog(BaseModel):
-    llm: list[ProviderInfo]
-    stt: list[ProviderInfo]
-    tts: list[ProviderInfo]
+    """The full provider+model registry, grouped by capability — the shape
+    returned by `GET /providers`."""
+
+    llm: list[ProviderInfo] = Field(..., description="Available LLM providers and models.")
+    stt: list[ProviderInfo] = Field(..., description="Available speech-to-text providers and models.")
+    tts: list[ProviderInfo] = Field(..., description="Available text-to-speech providers and voices.")

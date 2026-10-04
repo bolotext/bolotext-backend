@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents_service.core.partial import partial_model
 
@@ -25,10 +25,10 @@ class DynamicMessageSettings(BaseModel):
         }
     )
 
-    dynamic_message_enabled: bool = False
-    method: HttpMethod = "POST"
-    url: str | None = None
-    headers: dict[str, str] = {}
+    dynamic_message_enabled: bool = Field(False, description="Whether this agent may fetch and speak a dynamic message mid-call.")
+    method: HttpMethod = Field("POST", description="HTTP method used to call `url`.")
+    url: str | None = Field(None, description="Endpoint called to fetch the dynamic message content.")
+    headers: dict[str, str] = Field({}, description="Extra HTTP headers sent with every call to `url` (e.g. an API key).")
 
 
 DynamicMessageSettingsUpdate = partial_model(DynamicMessageSettings)

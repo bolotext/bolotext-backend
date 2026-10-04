@@ -1,9 +1,12 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents_service.core.partial import partial_model
 
 
 class DeploymentSettings(BaseModel):
+    """Which channels an agent is reachable on, and where its chat widget
+    may be embedded."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -16,11 +19,11 @@ class DeploymentSettings(BaseModel):
         }
     )
 
-    inbound_calling_enabled: bool = False
-    inbound_number: str | None = None
-    outbound_calling_enabled: bool = True
-    chat_widget_enabled: bool = False
-    valid_origins: list[str] = []
+    inbound_calling_enabled: bool = Field(False, description="Whether this agent answers inbound calls.")
+    inbound_number: str | None = Field(None, description="Phone number this agent answers inbound calls on, if inbound calling is enabled.")
+    outbound_calling_enabled: bool = Field(True, description="Whether this agent can be used to place outbound calls.")
+    chat_widget_enabled: bool = Field(False, description="Whether this agent is reachable via the embeddable chat widget.")
+    valid_origins: list[str] = Field([], description="Origins (e.g. https://app.example.com) allowed to embed the chat widget; empty allows none.")
     # embedding_script is derived server-side from agent_id, not stored here.
 
 

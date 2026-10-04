@@ -23,16 +23,16 @@ async def create_organization(
         raise ConflictError("An organization with this slug already exists", {"field": "slug"})
 
     admin_user: User | None = None
+    existing_user: User | None = None
     if admin_email:
-        if await user_repo.get_by_email(admin_email) is not None:
-            raise ConflictError("A user with this email already exists", {"field": "admin_email"})
-        if not admin_password:
+        existing_user = await user_repo.get_by_email(admin_email)
+        if existing_user is None and not admin_password:
             raise ConflictError("admin_password is required when admin_email is provided", {"field": "admin_password"})
 
     org = await organization_repo.create_organization(name=name, slug=slug, created_by=created_by)
 
     if admin_email:
-        admin_user = await user_repo.create_user(
+        admin_user = existing_user or await user_repo.create_user(
             email=admin_email,
             hashed_password=hash_password(admin_password),
             full_name=admin_full_name or admin_email,

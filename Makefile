@@ -1,4 +1,4 @@
-.PHONY: install test test-agents seed run-users run-gateway run-agents \
+.PHONY: install test test-agents seed run-users run-gateway run-agents run-all \
 	run-users-prod run-gateway-prod run-agents-prod \
 	docker-build docker-up docker-down docker-restart
 

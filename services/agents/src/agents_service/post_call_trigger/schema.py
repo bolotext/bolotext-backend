@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents_service.core.partial import partial_model
 
@@ -25,10 +25,10 @@ class PostCallTriggerSettings(BaseModel):
         }
     )
 
-    post_call_trigger_enabled: bool = False
-    method: HttpMethod = "POST"
-    url: str | None = None
-    headers: dict[str, str] = {}
+    post_call_trigger_enabled: bool = Field(False, description="Whether the webhook is called when a call ends.")
+    method: HttpMethod = Field("POST", description="HTTP method used to call `url`.")
+    url: str | None = Field(None, description="Endpoint called once a call ends.")
+    headers: dict[str, str] = Field({}, description="Extra HTTP headers sent with the call-ended webhook request (e.g. an API key).")
 
 
 PostCallTriggerSettingsUpdate = partial_model(PostCallTriggerSettings)

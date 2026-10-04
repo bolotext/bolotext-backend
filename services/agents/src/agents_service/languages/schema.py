@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LanguagesUpdate(BaseModel):
@@ -11,4 +11,7 @@ class LanguagesUpdate(BaseModel):
 
     model_config = ConfigDict(json_schema_extra={"example": {"languages": ["en-IN", "hi-IN"]}})
 
-    languages: list[str]
+    languages: list[str] = Field(
+        description="Full list of BCP-47 language codes the agent should support (e.g. `en-IN`, `hi-IN`). "
+        "Replaces the existing list entirely; must be non-empty."
+    )

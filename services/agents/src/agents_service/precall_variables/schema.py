@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PreCallVariablesUpdate(BaseModel):
@@ -27,5 +27,9 @@ class PreCallVariablesUpdate(BaseModel):
         }
     )
 
-    pre_call_variables: dict[str, str]
-    pre_call_variables_enabled: bool = True
+    pre_call_variables: dict[str, str] = Field(
+        ..., description="Default value for each `{{variable}}` name used in the prompt, keyed by variable name."
+    )
+    pre_call_variables_enabled: bool = Field(
+        True, description="Whether these defaults are applied when a call doesn't supply its own value."
+    )
