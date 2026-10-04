@@ -12,7 +12,7 @@ class TranscriberSettings(BaseModel):
             "example": {
                 "provider_id": "gnani",
                 "model_id": "gnani-stt-v2",
-                "tier": "balanced",
+                #"tier": "balanced",
                 "allow_interruptions": True,
                 "min_time_to_barge": 1.2,
                 "background_noise_filtering": True,
@@ -29,9 +29,9 @@ class TranscriberSettings(BaseModel):
 
     # provider_id defaults to "" (not a bare required str) so a fresh draft
     # agent can default-construct this section — see agents/service.py.
-    provider_id: str = Field("", description="STT provider id, e.g. `gnani`. See GET /providers/stt for valid values.")
-    model_id: str | None = Field(None, description="STT model id offered by `provider_id`, e.g. `gnani-stt-v2`.")
-    tier: str | None = Field(None, description="Provider-specific quality/cost tier for the model, e.g. `balanced`.")
+    provider_id: str = Field("deepgram", description="STT provider id, e.g. `gnani`. See GET /providers/stt for valid values.")
+    model_id: str | None = Field("nova-3", description="STT model id offered by `provider_id`, e.g. `gnani-stt-v2`.")
+    #tier: str | None = Field(None, description="Provider-specific quality/cost tier for the model, e.g. `balanced`.")
     allow_interruptions: bool = Field(True, description="Whether the caller can interrupt (barge in on) the agent while it's speaking.")
     min_time_to_barge: float = Field(1.2, description="Minimum seconds the agent must be speaking before a barge-in interruption is honored.")
     background_noise_filtering: bool = Field(True, description="Whether background noise is filtered out before transcription.")

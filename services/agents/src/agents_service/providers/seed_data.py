@@ -12,31 +12,15 @@ LLM_PROVIDERS: list[ProviderInfo] = [
         supports_function_calling=True,
         multilingual=True,
         models=[
-            ModelInfo(model_id="gpt-4o", label="GPT-4o", function_calling=True, supported_languages=["en", "hi"]),
+            ModelInfo(model_id="gpt-4o", label="GPT-4o", function_calling=True),
             ModelInfo(
                 model_id="gpt-4o-mini",
                 label="GPT-4o mini",
                 description="Fast, low-cost general-purpose model.",
-                function_calling=True,
-                supported_languages=["en", "hi"],
+                function_calling=True
             ),
         ],
-    ),
-    ProviderInfo(
-        provider_id="gnani",
-        label="Gnani SLM",
-        supports_function_calling=True,
-        multilingual=True,
-        models=[
-            ModelInfo(
-                model_id="gnani-slm-v1",
-                label="Gnani SLM v1",
-                description="In-house small language model tuned for Indian-language voice conversations.",
-                function_calling=True,
-                supported_languages=["en-IN", "hi-IN", "ta-IN", "te-IN", "kn-IN", "bn-IN", "mr-IN"],
-            ),
-        ],
-    ),
+    )
 ]
 
 STT_PROVIDERS: list[ProviderInfo] = [
@@ -53,12 +37,6 @@ STT_PROVIDERS: list[ProviderInfo] = [
         ],
     ),
     ProviderInfo(
-        provider_id="elevenlabs",
-        label="ElevenLabs",
-        multilingual=True,
-        models=[ModelInfo(model_id="scribe-v1", label="Scribe v1", supported_languages=["en"])],
-    ),
-    ProviderInfo(
         provider_id="deepgram",
         label="Deepgram",
         multilingual=True,
@@ -68,6 +46,12 @@ STT_PROVIDERS: list[ProviderInfo] = [
                 label="Nova-2",
                 description="General-purpose real-time/streaming STT model.",
                 supported_languages=["en", "hi"],
+            ),
+            ModelInfo(
+                model_id="nova-3",
+                label="Nova-3",
+                description="General-purpose real-time/streaming STT model.",
+                supported_languages=["en", "hi", "multi"],
             ),
         ],
     ),
@@ -100,12 +84,6 @@ TTS_PROVIDERS: list[ProviderInfo] = [
         ],
     ),
     ProviderInfo(
-        provider_id="elevenlabs",
-        label="ElevenLabs",
-        multilingual=True,
-        models=[ModelInfo(model_id="eleven_multilingual_v2", label="Eleven Multilingual v2", supported_languages=["en", "hi"])],
-    ),
-    ProviderInfo(
         provider_id="deepgram",
         label="Deepgram",
         multilingual=True,
@@ -114,7 +92,7 @@ TTS_PROVIDERS: list[ProviderInfo] = [
                 model_id="aura-2",
                 label="Aura-2",
                 description="Real-time streaming TTS model.",
-                supported_languages=["en"],
+                supported_languages=["en", "hi", "multi"],
             ),
         ],
     ),

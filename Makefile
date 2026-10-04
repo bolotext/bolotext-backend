@@ -33,6 +33,14 @@ run-agents:
 	@echo 'Running the Agents service locally on :8002 in dev mode (reload on; expects a reachable MongoDB and the Users service, see services/agents/.env)'
 	cd services/agents && uv run python main.py
 
+run-all:
+	@echo 'Running Users (:8001), API Gateway (:8000) and Agents (:8002) locally in dev mode (Ctrl+C stops all)'
+	@trap 'kill 0' INT TERM EXIT; \
+	(cd services/users && uv run python main.py serve) & \
+	(cd services/api-gateway && uv run python main.py) & \
+	(cd services/agents && uv run python main.py) & \
+	wait
+
 # Prod mode without Docker (ENVIRONMENT=production forces reload off; set
 # WORKERS to override the worker count, default 4). Equivalent to
 # `uvicorn <service>.app:app --host 0.0.0.0 --port <port> --workers ${WORKERS:-4}`.

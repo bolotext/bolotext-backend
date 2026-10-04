@@ -160,7 +160,7 @@ async def create_agent(auth: AuthContext, details: AgentDetails) -> tuple[Agent,
     config.bot_type = details.bot_type
     await config_repo.save(config)
     await _auto_assign_if_developer(agent, auth)
-    logger.info("agent created: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent created: agent_id=%s user_id=%s", agent.id, auth.user_id)
     return agent, config
 
 
@@ -207,7 +207,7 @@ async def update_agent_details(agent_id: PydanticObjectId, auth: AuthContext, pa
     if config_changed:
         await config_repo.save(config)
 
-    logger.info("agent details updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent details updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -222,7 +222,7 @@ async def update_languages(agent_id: PydanticObjectId, auth: AuthContext, langua
     agent, config = await get_agent_with_config(agent_id, auth)
     config.languages = list(languages)
     await config_repo.save(config)
-    logger.info("agent languages updated: agent_id=%s user_id=%s languages=%s", agent.id, auth.user_id, languages)
+    logger.info(f"agent languages updated: agent_id={agent.id} user_id={auth.user_id} languages={languages}")
     return agent, config
 
 
@@ -252,7 +252,7 @@ async def update_section(agent_id: PydanticObjectId, auth: AuthContext, section:
     else:
         setattr(config, spec.attr, merged)
         await config_repo.save(config)
-    logger.info("agent section updated: agent_id=%s user_id=%s section=%s", agent.id, auth.user_id, section)
+    logger.info(f"agent section updated: agent_id={agent.id} user_id={auth.user_id} section={section}")
     return agent, config
 
 
@@ -294,7 +294,7 @@ async def update_prompt_messages(agent_id: PydanticObjectId, auth: AuthContext, 
     agent, config = await get_agent_with_config(agent_id, auth)
     merged = _merge_prompt(config, update.model_dump(exclude_unset=True))
     await _save_prompt(config, merged)
-    logger.info("agent prompt messages updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent prompt messages updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -314,7 +314,7 @@ async def update_language_switch_settings(
     agent, config = await get_agent_with_config(agent_id, auth)
     merged = _merge_prompt(config, update.model_dump(exclude_unset=True))
     await _save_prompt(config, merged)
-    logger.info("agent language switch settings updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent language switch settings updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -336,7 +336,7 @@ async def update_pre_call_variables(
         config, {"pre_call_variables": dict(pre_call_variables), "pre_call_variables_enabled": pre_call_variables_enabled}
     )
     await _save_prompt(config, merged)
-    logger.info("agent pre-call variables updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent pre-call variables updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -355,7 +355,7 @@ async def update_dynamic_message(agent_id: PydanticObjectId, auth: AuthContext, 
     dynamic_message_data = {**config.prompt.dynamic_message.model_dump(), **update.model_dump(exclude_unset=True)}
     merged = _merge_prompt(config, {"dynamic_message": dynamic_message_data})
     await _save_prompt(config, merged)
-    logger.info("agent dynamic message configuration updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent dynamic message configuration updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -385,7 +385,7 @@ async def update_post_call_trigger(agent_id: PydanticObjectId, auth: AuthContext
 
     config.analytics.post_call_trigger = merged
     await config_repo.save(config)
-    logger.info("agent post-call trigger configuration updated: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent post-call trigger configuration updated: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -402,7 +402,7 @@ async def delete_agent(agent_id: PydanticObjectId, auth: AuthContext) -> tuple[A
     await prompt_service.delete_all_system_prompt_versions(agent.id)
     await assignment_repo.delete_all_by_agent_id(agent.id)
     await agent_repo.delete(agent)
-    logger.info("agent deleted: agent_id=%s user_id=%s", agent.id, auth.user_id)
+    logger.info(f"agent deleted: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config
 
 
@@ -432,7 +432,7 @@ async def update_status(agent_id: PydanticObjectId, auth: AuthContext, status: A
     agent, config = await get_agent_with_config(agent_id, auth)
     agent.status = status
     await agent_repo.save(agent)
-    logger.info("agent status updated: agent_id=%s user_id=%s status=%s", agent.id, auth.user_id, status)
+    logger.info(f"agent status updated: agent_id={agent.id} user_id={auth.user_id} status={status}")
     return agent, config
 
 
@@ -468,7 +468,7 @@ async def clone_agent(agent_id: PydanticObjectId, auth: AuthContext) -> tuple[Ag
     await _auto_assign_if_developer(clone_agent_doc, auth)
 
     logger.info(
-        "agent cloned: source_agent_id=%s new_agent_id=%s user_id=%s", source_agent.id, clone_agent_doc.id, auth.user_id
+        f"agent cloned: source_agent_id={source_agent.id} new_agent_id={clone_agent_doc.id} user_id={auth.user_id}"
     )
     return clone_agent_doc, clone_config
 
@@ -537,7 +537,7 @@ async def promote_environment(
     await config_repo.save(target_config)
 
     logger.info(
-        "agent environment promoted: agent_id=%s %s -> %s user_id=%s", agent.id, source_env, target, auth.user_id
+        f"agent environment promoted: agent_id={agent.id} {source_env} -> {target} user_id={auth.user_id}"
     )
     return agent, target_config
 
@@ -577,7 +577,7 @@ async def assign_agent(agent_id: PydanticObjectId, auth: AuthContext, target_use
     _require_admin(auth)
     if not await assignment_repo.is_assigned(agent.id, target_user_id):
         await assignment_repo.create(agent.id, target_user_id, agent.org_id, assigned_by=auth.user_id)
-    logger.info("agent assigned: agent_id=%s user_id=%s assigned_by=%s", agent.id, target_user_id, auth.user_id)
+    logger.info(f"agent assigned: agent_id={agent.id} user_id={target_user_id} assigned_by={auth.user_id}")
     return await list_agent_assignees(agent_id, auth)
 
 
@@ -588,7 +588,7 @@ async def unassign_agent(agent_id: PydanticObjectId, auth: AuthContext, target_u
     if assignment is None:
         raise NotFoundError("Assignment not found")
     await assignment_repo.delete(assignment)
-    logger.info("agent unassigned: agent_id=%s user_id=%s by=%s", agent.id, target_user_id, auth.user_id)
+    logger.info(f"agent unassigned: agent_id={agent.id} user_id={target_user_id} by={auth.user_id}")
     return await list_agent_assignees(agent_id, auth)
 
 
