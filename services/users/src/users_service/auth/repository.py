@@ -26,3 +26,11 @@ async def revoke_all_for_user(user_id: PydanticObjectId) -> None:
     await RefreshToken.find(RefreshToken.user_id == user_id, RefreshToken.revoked == False).update(  # noqa: E712
         {"$set": {"revoked": True}}
     )
+
+
+async def get_last_used_organization_id(user_id: PydanticObjectId) -> PydanticObjectId | None:
+    """Org of the user's most recent org-scoped session (revoked or not)."""
+    record = await RefreshToken.find(
+        RefreshToken.user_id == user_id, RefreshToken.organization_id != None  # noqa: E711
+    ).sort("-created_at").first_or_none()
+    return record.organization_id if record else None

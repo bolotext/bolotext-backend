@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
 
+    # Google Sign-In (OAuth client id the ID token's audience must match)
+    google_client_id: str | None = None
+
     # Internal service-to-service auth (for the token introspection endpoint)
     internal_api_key: str = "change-me-internal-key"
 
@@ -37,7 +40,6 @@ class Settings(BaseSettings):
 
     # Bootstrap super admin (used only by the idempotent seed script)
     bootstrap_super_admin_email: str | None = None
-    bootstrap_super_admin_password: str | None = None
     bootstrap_super_admin_name: str = "Super Admin"
 
 

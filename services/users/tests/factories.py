@@ -1,7 +1,7 @@
 from beanie import PydanticObjectId
 from common.enums import Role
 
-from users_service.core.security import create_access_token, hash_password
+from users_service.core.security import create_access_token
 from users_service.enums import UserStatus
 from users_service.memberships.model import OrganizationMembership
 from users_service.organizations.model import Organization
@@ -24,12 +24,10 @@ async def make_user(
     organization_id: PydanticObjectId | None,
     role: Role,
     email: str,
-    password: str = "password123",
     status: UserStatus = UserStatus.ACTIVE,
 ) -> User:
     user = User(
         email=email,
-        hashed_password=hash_password(password),
         full_name=email,
         is_super_admin=role == Role.SUPER_ADMIN,
         status=status,

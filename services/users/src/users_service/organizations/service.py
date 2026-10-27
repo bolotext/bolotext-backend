@@ -2,7 +2,6 @@ from beanie import PydanticObjectId
 from common.enums import Role
 from common.errors import ConflictError, NotFoundError
 
-from users_service.core.security import hash_password
 from users_service.enums import OrganizationStatus, UserStatus
 from users_service.memberships import repository as membership_repo
 from users_service.organizations.model import Organization
@@ -16,25 +15,19 @@ async def create_organization(
     slug: str,
     created_by: PydanticObjectId,
     admin_email: str | None = None,
-    admin_password: str | None = None,
     admin_full_name: str | None = None,
 ) -> tuple[Organization, User | None]:
     if await organization_repo.get_by_slug(slug) is not None:
         raise ConflictError("An organization with this slug already exists", {"field": "slug"})
 
     admin_user: User | None = None
-    existing_user: User | None = None
-    if admin_email:
-        existing_user = await user_repo.get_by_email(admin_email)
-        if existing_user is None and not admin_password:
-            raise ConflictError("admin_password is required when admin_email is provided", {"field": "admin_password"})
+    existing_user = await user_repo.get_by_email(admin_email) if admin_email else None
 
     org = await organization_repo.create_organization(name=name, slug=slug, created_by=created_by)
 
     if admin_email:
         admin_user = existing_user or await user_repo.create_user(
             email=admin_email,
-            hashed_password=hash_password(admin_password),
             full_name=admin_full_name or admin_email,
             created_by=created_by,
             status=UserStatus.ACTIVE,

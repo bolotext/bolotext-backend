@@ -4,14 +4,16 @@ from contextlib import asynccontextmanager
 from common.errors import register_exception_handlers
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from agents_service.actions.router import router as actions_router
 from agents_service.agent_assignments.router import router as agent_assignments_router
 from agents_service.agent_details.router import router as agent_details_router
+from agents_service.agent_templates.router import router as agent_templates_router
 from agents_service.agents.router import router as agents_router
 from agents_service.analytics.router import router as analytics_router
 from agents_service.core.config import get_settings
+from agents_service.core.deps import bind_write_environment
 from agents_service.core.http_client import close_http_client
 from agents_service.db.mongodb import close_db, get_client, init_db
 from agents_service.deployment.router import router as deployment_router
@@ -101,6 +103,7 @@ def create_app() -> FastAPI:
         description=API_DESCRIPTION,
         openapi_tags=TAGS_METADATA,
         lifespan=lifespan,
+        dependencies=[Depends(bind_write_environment)],
     )
     register_exception_handlers(app)
 
@@ -109,6 +112,7 @@ def create_app() -> FastAPI:
     # publish/clone); every tab's own router owns its PATCH .../{section} route
     # (and, for prompt, the /test render endpoint) — see agents/model.py's
     # docstring for why the split follows the agent-builder's tabs.
+    app.include_router(agent_templates_router, prefix=api_v1)
     app.include_router(agents_router, prefix=api_v1)
     app.include_router(agent_assignments_router, prefix=api_v1)
     app.include_router(agent_details_router, prefix=api_v1)

@@ -2,7 +2,6 @@ from common.enums import Role
 from common.log_utils import setup_logger
 
 from users_service.core.config import get_settings
-from users_service.core.security import hash_password
 from users_service.enums import UserStatus
 from users_service.memberships import repository as membership_repo
 from users_service.permissions.repository import PermissionRepository
@@ -85,7 +84,7 @@ async def seed_permissions() -> None:
 
 async def seed_bootstrap_super_admin() -> None:
     settings = get_settings()
-    if not settings.bootstrap_super_admin_email or not settings.bootstrap_super_admin_password:
+    if not settings.bootstrap_super_admin_email:
         logger.info("No bootstrap super admin configured, skipping.")
         return
 
@@ -96,7 +95,6 @@ async def seed_bootstrap_super_admin() -> None:
 
     await User(
         email=settings.bootstrap_super_admin_email,
-        hashed_password=hash_password(settings.bootstrap_super_admin_password),
         full_name=settings.bootstrap_super_admin_name,
         is_super_admin=True,
         status=UserStatus.ACTIVE,
@@ -138,9 +136,23 @@ async def backfill_memberships() -> None:
         await collection.update_one({"_id": user_id}, {"$unset": {"role": "", "organization_id": ""}})
 
 
+async def drop_legacy_password_fields() -> None:
+    """One-time, idempotent migration: login is Google-only, so any stored
+    `hashed_password` / `must_change_password` is dead credential data. Unset
+    it from raw Mongo (the Beanie `User` model no longer declares them).
+    """
+    result = await User.get_pymongo_collection().update_many(
+        {"$or": [{"hashed_password": {"$exists": True}}, {"must_change_password": {"$exists": True}}]},
+        {"$unset": {"hashed_password": "", "must_change_password": ""}},
+    )
+    if result.modified_count:
+        logger.info("Removed legacy password fields from %d user(s)", result.modified_count)
+
+
 async def seed_all() -> None:
     """Idempotent: safe to run on every startup and via a manual `python main.py seed`."""
     await seed_roles()
     await seed_permissions()
     await seed_bootstrap_super_admin()
     await backfill_memberships()
+    await drop_legacy_password_fields()

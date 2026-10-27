@@ -24,7 +24,6 @@ from users_service.users.model import User
 
 async def create_user(
     email: str,
-    hashed_password: str,
     full_name: str,
     created_by: PydanticObjectId | None,
     status: UserStatus = UserStatus.ACTIVE,
@@ -32,7 +31,6 @@ async def create_user(
 ) -> User:
     user = User(
         email=email,
-        hashed_password=hashed_password,
         full_name=full_name,
         is_super_admin=is_super_admin,
         status=status,
@@ -126,17 +124,11 @@ async def update_user(
     user: User,
     full_name: str | None = None,
     status: UserStatus | None = None,
-    hashed_password: str | None = None,
-    must_change_password: bool | None = None,
 ) -> User:
     if full_name is not None:
         user.full_name = full_name
     if status is not None:
         user.status = status
-    if hashed_password is not None:
-        user.hashed_password = hashed_password
-    if must_change_password is not None:
-        user.must_change_password = must_change_password
     user.updated_at = datetime.now(timezone.utc)
     await user.save()
     return user

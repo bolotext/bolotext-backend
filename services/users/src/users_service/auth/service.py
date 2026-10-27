@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -5,15 +6,17 @@ import jwt
 from beanie import PydanticObjectId
 from common.errors import BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError
 from common.jwt import REFRESH_TOKEN_TYPE
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 
 from users_service.auth import repository as refresh_token_repo
 from users_service.auth.schema import OrganizationChoice
+from users_service.core.config import get_settings
 from users_service.core.security import (
     create_access_token,
     create_refresh_token,
     decode_own_token,
     hash_refresh_token,
-    verify_password,
 )
 from users_service.core.time import ensure_aware_utc
 from users_service.enums import UserStatus
@@ -54,10 +57,29 @@ async def _resolve_organization_choices(memberships: list[OrganizationMembership
     ]
 
 
-async def login(email: str, password: str, organization_id: str | None = None) -> LoginResult:
+def _verify_google_token(token: str) -> str:
+    """Validates a Google ID token (signature, expiry, audience) and returns
+    the verified email address it was issued for.
+    """
+    client_id = get_settings().google_client_id
+    if not client_id:
+        raise UnauthorizedError("Google sign-in is not configured")
+    try:
+        claims = google_id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+    except ValueError:
+        raise UnauthorizedError("Invalid Google credential")
+    email = claims.get("email")
+    if not email or not claims.get("email_verified"):
+        raise UnauthorizedError("Google account email is not verified")
+    return email.lower()
+
+
+async def login(google_credential: str, organization_id: str | None = None) -> LoginResult:
+    # Network fetch of Google's signing certs happens inside; keep it off the event loop.
+    email = await asyncio.to_thread(_verify_google_token, google_credential)
     user = await user_repo.get_by_email(email)
-    if user is None or not verify_password(password, user.hashed_password):
-        raise UnauthorizedError("Invalid email or password")
+    if user is None:
+        raise UnauthorizedError("No account exists for this Google user")
     if user.status != UserStatus.ACTIVE:
         raise UnauthorizedError("This account is not active")
 
@@ -80,8 +102,14 @@ async def login(email: str, password: str, organization_id: str | None = None) -
         elif len(memberships) == 1:
             target_org_id = memberships[0].organization_id
         else:
-            choices = await _resolve_organization_choices(memberships)
-            return LoginResult(requires_selection=True, organizations=choices)
+            # Multi-org user: sign into the last-used org (else the oldest
+            # membership); they can switch afterwards via /auth/switch-organization.
+            member_org_ids = {m.organization_id for m in memberships}
+            last_used = await refresh_token_repo.get_last_used_organization_id(user.id)
+            if last_used in member_org_ids:
+                target_org_id = last_used
+            else:
+                target_org_id = min(memberships, key=lambda m: m.created_at).organization_id
 
     access_token, refresh_token = await _issue_session(user, target_org_id)
     await user_repo.record_login(user)

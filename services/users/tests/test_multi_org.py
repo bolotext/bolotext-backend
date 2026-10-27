@@ -10,9 +10,9 @@ pytestmark = pytest.mark.asyncio
 
 async def test_single_membership_login_auto_selects_org(client):
     org = await make_org("Org Single", "org-single")
-    await make_user(org.id, Role.ADMIN, "single@example.com", password="password123")
+    await make_user(org.id, Role.ADMIN, "single@example.com")
 
-    resp = await client.post("/api/v1/auth/login", json={"email": "single@example.com", "password": "password123"})
+    resp = await client.post("/api/v1/auth/login", json={"credential": "single@example.com"})
     assert resp.status_code == 200
     body = data(resp)
     assert body["access_token"]
@@ -22,20 +22,20 @@ async def test_single_membership_login_auto_selects_org(client):
 async def test_multi_membership_login_requires_selection(client):
     org_a = await make_org("Org Multi A", "org-multi-a")
     org_b = await make_org("Org Multi B", "org-multi-b")
-    user = await make_user(org_a.id, Role.ADMIN, "multi@example.com", password="password123")
+    user = await make_user(org_a.id, Role.ADMIN, "multi@example.com")
     await OrganizationMembership(user_id=user.id, organization_id=org_b.id, role=Role.QA).insert()
 
-    resp = await client.post("/api/v1/auth/login", json={"email": "multi@example.com", "password": "password123"})
+    # No org chosen: signs straight into the oldest membership.
+    resp = await client.post("/api/v1/auth/login", json={"credential": "multi@example.com"})
     assert resp.status_code == 200
     body = data(resp)
-    assert body["access_token"] is None
-    assert body["refresh_token"] is None
-    orgs = {o["organization_id"]: o["role"] for o in body["organizations"]}
-    assert orgs == {str(org_a.id): "ADMIN", str(org_b.id): "QA"}
+    assert body["access_token"]
+    me = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {body['access_token']}"})
+    assert data(me)["organization_id"] == str(org_a.id)
 
     resp2 = await client.post(
         "/api/v1/auth/login",
-        json={"email": "multi@example.com", "password": "password123", "organization_id": str(org_b.id)},
+        json={"credential": "multi@example.com", "organization_id": str(org_b.id)},
     )
     assert resp2.status_code == 200
     body2 = data(resp2)
@@ -50,7 +50,7 @@ async def test_multi_membership_login_requires_selection(client):
 async def test_switch_organization_reissues_token_for_different_role(client):
     org_a = await make_org("Org Switch A", "org-switch-a")
     org_b = await make_org("Org Switch B", "org-switch-b")
-    user = await make_user(org_a.id, Role.ADMIN, "switch@example.com", password="password123")
+    user = await make_user(org_a.id, Role.ADMIN, "switch@example.com")
     await OrganizationMembership(user_id=user.id, organization_id=org_b.id, role=Role.DEVELOPER).insert()
 
     resp = await client.post(
@@ -68,7 +68,7 @@ async def test_switch_organization_reissues_token_for_different_role(client):
 async def test_switch_organization_rejected_without_membership(client):
     org_a = await make_org("Org NoAccess A", "org-noaccess-a")
     org_b = await make_org("Org NoAccess B", "org-noaccess-b")
-    user = await make_user(org_a.id, Role.ADMIN, "noaccess@example.com", password="password123")
+    user = await make_user(org_a.id, Role.ADMIN, "noaccess@example.com")
 
     resp = await client.post(
         "/api/v1/auth/switch-organization", headers=auth_header(user, org_a.id), json={"organization_id": str(org_b.id)}
@@ -79,10 +79,10 @@ async def test_switch_organization_rejected_without_membership(client):
 
 async def test_refresh_reissues_access_token_for_pinned_org(client):
     org = await make_org("Org Refresh", "org-refresh")
-    await make_user(org.id, Role.DEVELOPER, "refresh-org@example.com", password="password123")
+    await make_user(org.id, Role.DEVELOPER, "refresh-org@example.com")
 
     login_resp = await client.post(
-        "/api/v1/auth/login", json={"email": "refresh-org@example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"credential": "refresh-org@example.com"}
     )
     refresh_token = data(login_resp)["refresh_token"]
 
@@ -97,7 +97,7 @@ async def test_refresh_reissues_access_token_for_pinned_org(client):
 
 async def test_removed_membership_is_rejected_immediately(client):
     org = await make_org("Org Revoke", "org-revoke")
-    user = await make_user(org.id, Role.QA, "revoke@example.com", password="password123")
+    user = await make_user(org.id, Role.QA, "revoke@example.com")
     membership = await OrganizationMembership.find_one(
         OrganizationMembership.user_id == user.id, OrganizationMembership.organization_id == org.id
     )
@@ -110,11 +110,24 @@ async def test_removed_membership_is_rejected_immediately(client):
 
 
 async def test_super_admin_login_ignores_organization_id(client):
-    super_admin = await make_user(None, Role.SUPER_ADMIN, "super-multi@example.com", password="password123")
+    super_admin = await make_user(None, Role.SUPER_ADMIN, "super-multi@example.com")
     resp = await client.post(
-        "/api/v1/auth/login", json={"email": "super-multi@example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"credential": "super-multi@example.com"}
     )
     assert resp.status_code == 200
     body = data(resp)
     assert body["access_token"]
     assert body["organizations"] is None
+
+
+async def test_login_defaults_to_last_used_organization(client):
+    org_a = await make_org("Org LU A", "org-lu-a")
+    org_b = await make_org("Org LU B", "org-lu-b")
+    user = await make_user(org_a.id, Role.ADMIN, "lastused@example.com")
+    await OrganizationMembership(user_id=user.id, organization_id=org_b.id, role=Role.QA).insert()
+
+    await client.post("/api/v1/auth/login", json={"credential": "lastused@example.com", "organization_id": str(org_b.id)})
+    resp = await client.post("/api/v1/auth/login", json={"credential": "lastused@example.com"})
+    token = data(resp)["access_token"]
+    me = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert data(me)["organization_id"] == str(org_b.id)

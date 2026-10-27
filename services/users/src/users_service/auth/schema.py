@@ -1,14 +1,13 @@
 from common.enums import Role
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
     model_config = ConfigDict(
-        json_schema_extra={"example": {"email": "user@example.com", "password": "<password>"}}
+        json_schema_extra={"example": {"credential": "<google-id-token>"}}
     )
 
-    email: EmailStr = Field(description="The account's email address.")
-    password: str = Field(description="The account's password, in plain text over TLS.")
+    credential: str = Field(description="The Google ID token (JWT) returned by Google Sign-In.")
     # Only needed when the account belongs to more than one organization and
     # the first login attempt (without it) came back with `organizations`
     # instead of tokens.

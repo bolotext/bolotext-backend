@@ -1,10 +1,9 @@
 from beanie import PydanticObjectId
 from common.enums import Role
-from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
 from users_service.auth import repository as refresh_token_repo
 from users_service.core.deps import AuthContext
-from users_service.core.security import hash_password, verify_password
 from users_service.enums import UserStatus
 from users_service.memberships import repository as membership_repo
 from users_service.memberships.model import OrganizationMembership
@@ -18,7 +17,6 @@ ORG_ASSIGNABLE_ROLES = {Role.ADMIN, Role.DEVELOPER, Role.QA}
 async def create_user(
     auth: AuthContext,
     email: str,
-    password: str,
     full_name: str,
     role: Role,
     organization_id: str | None,
@@ -39,12 +37,19 @@ async def create_user(
         # Admin: always the caller's own org, regardless of what the client sent.
         target_org_id = auth.organization_id
 
-    if await user_repo.get_by_email(email) is not None:
-        raise ConflictError("A user with this email already exists", {"field": "email"})
+    existing = await user_repo.get_by_email(email)
+    if existing is not None:
+        # Email is global (one account, many orgs): an existing user is added
+        # to this org as a new membership rather than duplicated.
+        if existing.is_super_admin:
+            raise ConflictError("This email belongs to a platform Super Admin", {"field": "email"})
+        if await membership_repo.get(existing.id, target_org_id) is not None:
+            raise ConflictError("This user is already a member of this organization", {"field": "email"})
+        membership = await membership_repo.create(existing.id, target_org_id, role, created_by=auth.user_id)
+        return existing, membership
 
     user = await user_repo.create_user(
         email=email,
-        hashed_password=hash_password(password),
         full_name=full_name,
         created_by=auth.user_id,
         status=UserStatus.ACTIVE,
@@ -90,7 +95,6 @@ async def update_user(
     full_name: str | None,
     role: Role | None,
     status: UserStatus | None,
-    password: str | None,
 ) -> tuple[User, OrganizationMembership | None]:
     if role is not None and role not in ORG_ASSIGNABLE_ROLES:
         raise BadRequestError("role must be one of ADMIN, DEVELOPER, QA", {"field": "role"})
@@ -121,10 +125,7 @@ async def update_user(
         if role is not None:
             membership = await membership_repo.update_role(membership, role)
 
-    hashed_password = hash_password(password) if password else None
-    updated = await user_repo.update_user(target, full_name=full_name, status=status, hashed_password=hashed_password)
-    if password:
-        await refresh_token_repo.revoke_all_for_user(updated.id)
+    updated = await user_repo.update_user(target, full_name=full_name, status=status)
     return updated, membership
 
 
@@ -145,19 +146,5 @@ async def disable_user(auth: AuthContext, user_id: PydanticObjectId) -> tuple[Us
     return updated, membership
 
 
-async def update_self(
-    auth: AuthContext, full_name: str | None, password: str | None, current_password: str | None
-) -> User:
-    user = auth.user
-
-    if password:
-        if not current_password or not verify_password(current_password, user.hashed_password):
-            raise UnauthorizedError("Current password is incorrect")
-
-    hashed_password = hash_password(password) if password else None
-    updated = await user_repo.update_user(
-        user, full_name=full_name, hashed_password=hashed_password, must_change_password=False if password else None
-    )
-    if password:
-        await refresh_token_repo.revoke_all_for_user(updated.id)
-    return updated
+async def update_self(auth: AuthContext, full_name: str | None) -> User:
+    return await user_repo.update_user(auth.user, full_name=full_name)

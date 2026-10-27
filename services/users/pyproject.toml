@@ -11,9 +11,10 @@ dependencies = [
     "beanie>=1.29.0",
     "pydantic-settings>=2.7.0",
     "pyjwt>=2.10.0",
-    "bcrypt>=4.2.0",
     "email-validator>=2.2.0",
     "slowapi>=0.1.9",
+    "google-auth>=2.35.0",
+    "requests>=2.32.0",
 ]
 
 [dependency-groups]

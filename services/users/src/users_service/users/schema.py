@@ -11,7 +11,6 @@ class UserCreate(BaseModel):
         json_schema_extra={
             "example": {
                 "email": "new.user@example.com",
-                "password": "<password>",
                 "full_name": "Jane Doe",
                 "role": "DEVELOPER",
             }
@@ -19,7 +18,6 @@ class UserCreate(BaseModel):
     )
 
     email: EmailStr = Field(description="The new user's email address; must be unique across the platform.")
-    password: str = Field(min_length=8, description="Initial password (min. 8 characters).")
     full_name: str = Field(min_length=1, max_length=200, description="The new user's display name.")
     role: Role = Field(description="Role to grant the user within the target organization.")
     # Required when the caller is SUPER_ADMIN (which org to create the user in).
@@ -35,13 +33,10 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=200, description="New display name, if changing it.")
     role: Role | None = Field(default=None, description="New role within the organization, if changing it.")
     status: UserStatus | None = Field(default=None, description="New lifecycle status, if changing it (e.g. to disable the user).")
-    password: str | None = Field(default=None, min_length=8, description="New password (min. 8 characters), if resetting it.")
 
 
 class UserSelfUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=200, description="New display name, if changing it.")
-    password: str | None = Field(default=None, min_length=8, description="New password (min. 8 characters), if changing it. Requires `current_password`.")
-    current_password: str | None = Field(default=None, description="The caller's current password, required to set a new `password`.")
 
 
 class UserOut(BaseModel):
@@ -59,7 +54,6 @@ class UserOut(BaseModel):
     role: Role | None = Field(description="The user's role within `organization_id`. `null` when `organization_id` is null.")
     is_super_admin: bool = Field(description="Whether this user has platform-wide Super Admin access, bypassing per-organization roles.")
     status: UserStatus = Field(description="Current lifecycle status.")
-    must_change_password: bool = Field(description="Whether the user is required to set a new password. Cleared automatically the next time the user changes their own password via `PATCH /users/me`.")
     created_by: str | None = Field(default=None, description="Id of the user who created this account, if known.")
     created_at: datetime
     updated_at: datetime

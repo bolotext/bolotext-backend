@@ -1,8 +1,12 @@
 import mongomock.database
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from mongomock_motor import AsyncMongoMockClient
 
+from common.errors import UnauthorizedError
+
+from users_service.auth import service as auth_service
 from users_service.db.mongodb import init_db
 from users_service.db.seed import seed_all
 
@@ -17,6 +21,18 @@ def _list_collection_names_compat(self, filter=None, session=None, **_ignored_kw
 
 
 mongomock.database.Database.list_collection_names = _list_collection_names_compat
+
+
+@pytest.fixture(autouse=True)
+def fake_google_verification(monkeypatch):
+    """Tests pass the verified email as the Google credential; "invalid" simulates a bad token."""
+
+    def _verify(token: str) -> str:
+        if token == "invalid":
+            raise UnauthorizedError("Invalid Google credential")
+        return token.lower()
+
+    monkeypatch.setattr(auth_service, "_verify_google_token", _verify)
 
 
 @pytest_asyncio.fixture

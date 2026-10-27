@@ -8,7 +8,7 @@ how this fits into the overall microservices layout.
 
 - **API**: FastAPI
 - **DB**: MongoDB via Motor + Beanie (ODM)
-- **Auth**: JWT (access + refresh), bcrypt password hashing
+- **Auth**: Google Sign-In (ID token verified server-side) issuing JWT (access + refresh). No passwords are stored
 - **Tenancy**: every resource is scoped by an indexed `organization_id`; every
   org-scoped query goes through a repository function that always filters by
   it — a client can never supply its own `organization_id` to widen a query
@@ -37,7 +37,7 @@ src/users_service/
 
 `auth/` owns the `RefreshToken` model (a session/auth artifact) even though
 `users/service.py` calls into `auth/repository.py` to revoke sessions on
-disable/password-change — that cross-module call is expected in a modular
+disable — that cross-module call is expected in a modular
 (not fully isolated) service; what matters is there's no import cycle back
 the other way.
 
@@ -59,7 +59,7 @@ uv sync                 # from the repo root — this is a workspace member
 | `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | Token lifetimes |
 | `INTERNAL_API_KEY` | Shared secret for `/api/v1/internal/introspect`, used by other internal services to resolve a token without re-implementing JWT verification |
 | `LOGIN_RATE_LIMIT` | e.g. `5/minute`, applied to `POST /auth/login` |
-| `BOOTSTRAP_SUPER_ADMIN_EMAIL` / `_PASSWORD` / `_NAME` | Used only by the seed step below, to idempotently create the first `SUPER_ADMIN`. Unset them after your first run in a shared environment. |
+| `BOOTSTRAP_SUPER_ADMIN_EMAIL` / `_NAME` | Used only by the seed step below, to idempotently create the first `SUPER_ADMIN`. Unset them after your first run in a shared environment. |
 
 > A `SUPER_ADMIN` is always org-less (`organization_id` is `null`) and there is
 > no API path to attach one to an organization — the bootstrap seed script is
@@ -95,10 +95,11 @@ go through the API Gateway instead.
 ```bash
 BASE=http://localhost:8001/api/v1
 
-# 1. Log in as the bootstrap Super Admin (seeded via BOOTSTRAP_SUPER_ADMIN_* env vars)
+# 1. Log in as the bootstrap Super Admin (seeded via BOOTSTRAP_SUPER_ADMIN_* env vars).
+#    GOOGLE_ID_TOKEN is the ID token from Google Sign-In for that email.
 SUPER_TOKEN=$(curl -s -X POST $BASE/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"superadmin@example.com","password":"<your bootstrap password>"}' \
+  -d "{\"credential\":\"$GOOGLE_ID_TOKEN\"}" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
 
 # 2. Super Admin creates an organization, bootstrapping its first Admin in the same call
@@ -108,22 +109,21 @@ curl -s -X POST $BASE/organizations \
         "name": "Acme Corp",
         "slug": "acme-corp",
         "admin_email": "admin@acme.example.com",
-        "admin_password": "AdminPass123!",
         "admin_full_name": "Acme Admin"
       }'
 
 # 3. Log in as that org Admin
 ADMIN_TOKEN=$(curl -s -X POST $BASE/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@acme.example.com","password":"AdminPass123!"}' \
+  -d "{\"credential\":\"$ADMIN_GOOGLE_ID_TOKEN\"}" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
 
 # 4. Admin creates a Developer and a QA user in their own org
 curl -s -X POST $BASE/users -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"email":"dev@acme.example.com","password":"DevPass123!","full_name":"Dev One","role":"DEVELOPER"}'
+  -d '{"email":"dev@acme.example.com","full_name":"Dev One","role":"DEVELOPER"}'
 
 curl -s -X POST $BASE/users -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"email":"qa@acme.example.com","password":"QaPass123!","full_name":"QA One","role":"QA"}'
+  -d '{"email":"qa@acme.example.com","full_name":"QA One","role":"QA"}'
 
 # 5. Admin lists the org's users (Developer can too, read-only; QA gets 403)
 curl -s $BASE/users -H "Authorization: Bearer $ADMIN_TOKEN"

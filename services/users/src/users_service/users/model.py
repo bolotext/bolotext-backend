@@ -17,11 +17,9 @@ class User(Document):
     """
 
     email: str
-    hashed_password: str
     full_name: str
     is_super_admin: bool = False
     status: UserStatus = UserStatus.ACTIVE
-    must_change_password: bool = False
     created_by: PydanticObjectId | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -30,7 +28,7 @@ class User(Document):
     class Settings:
         name = "users"
         indexes = [
-            # Global uniqueness: login takes only an email + password with no
+            # Global uniqueness: login takes only a Google credential with no
             # org context, so email must resolve unambiguously.
             IndexModel("email", unique=True),
         ]

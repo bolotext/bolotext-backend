@@ -16,7 +16,6 @@ async def test_super_admin_creates_org_with_bootstrap_admin(client):
             "name": "Acme Corp",
             "slug": "acme-corp",
             "admin_email": "admin@acme.example.com",
-            "admin_password": "password123",
             "admin_full_name": "Acme Admin",
         },
     )
@@ -27,7 +26,7 @@ async def test_super_admin_creates_org_with_bootstrap_admin(client):
     assert body["admin_user_id"]
 
     login_resp = await client.post(
-        "/api/v1/auth/login", json={"email": "admin@acme.example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"credential": "admin@acme.example.com"}
     )
     assert login_resp.status_code == 200
 

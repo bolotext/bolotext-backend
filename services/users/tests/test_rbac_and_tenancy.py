@@ -61,7 +61,7 @@ async def test_developer_has_read_only_access(client):
     create_resp = await client.post(
         "/api/v1/users",
         headers=auth_header(dev),
-        json={"email": "new@example.com", "password": "password123", "full_name": "New", "role": "QA"},
+        json={"email": "new@example.com", "full_name": "New", "role": "QA"},
     )
     assert create_resp.status_code == 200
     assert code(create_resp) == 403
@@ -80,7 +80,7 @@ async def test_admin_can_create_and_disable_user_in_own_org(client):
     create_resp = await client.post(
         "/api/v1/users",
         headers=auth_header(admin),
-        json={"email": "dev-e@example.com", "password": "password123", "full_name": "Dev E", "role": "DEVELOPER"},
+        json={"email": "dev-e@example.com", "full_name": "Dev E", "role": "DEVELOPER"},
     )
     assert create_resp.status_code == 200
     assert code(create_resp) == 201
@@ -103,7 +103,6 @@ async def test_admin_cannot_create_user_in_another_org(client):
         headers=auth_header(admin_a),
         json={
             "email": "sneaky@example.com",
-            "password": "password123",
             "full_name": "Sneaky",
             "role": "DEVELOPER",
             "organization_id": str(org_b.id),
@@ -121,7 +120,7 @@ async def test_role_escalation_to_super_admin_is_rejected(client):
     resp = await client.post(
         "/api/v1/users",
         headers=auth_header(admin),
-        json={"email": "x@example.com", "password": "password123", "full_name": "X", "role": "SUPER_ADMIN"},
+        json={"email": "x@example.com", "full_name": "X", "role": "SUPER_ADMIN"},
     )
     assert resp.status_code == 200
     assert code(resp) == 400
@@ -136,7 +135,6 @@ async def test_super_admin_can_manage_across_orgs(client):
         headers=auth_header(super_admin),
         json={
             "email": "admin-g@example.com",
-            "password": "password123",
             "full_name": "Admin G",
             "role": "ADMIN",
             "organization_id": str(org_a.id),
@@ -152,27 +150,14 @@ async def test_super_admin_can_manage_across_orgs(client):
     assert any(o["slug"] == "org-g" for o in data(list_resp))
 
 
-async def test_self_profile_password_change_requires_current_password(client):
+async def test_self_profile_update_only_changes_name(client):
     org = await make_org("Org K", "org-k")
-    dev = await make_user(org.id, Role.DEVELOPER, "dev-k@example.com", password="password123")
+    dev = await make_user(org.id, Role.DEVELOPER, "dev-k@example.com")
 
-    wrong_resp = await client.patch(
-        "/api/v1/users/me",
-        headers=auth_header(dev),
-        json={"password": "newpassword123", "current_password": "wrong"},
-    )
-    assert wrong_resp.status_code == 200
-    assert code(wrong_resp) == 401
+    resp = await client.patch("/api/v1/users/me", headers=auth_header(dev), json={"full_name": "Dev K"})
+    assert code(resp) == 200
+    body = data(resp)
+    assert body["full_name"] == "Dev K"
+    assert "must_change_password" not in body
+    assert "hashed_password" not in body
 
-    ok_resp = await client.patch(
-        "/api/v1/users/me",
-        headers=auth_header(dev),
-        json={"password": "newpassword123", "current_password": "password123"},
-    )
-    assert ok_resp.status_code == 200
-    assert code(ok_resp) == 200
-
-    login_resp = await client.post(
-        "/api/v1/auth/login", json={"email": "dev-k@example.com", "password": "newpassword123"}
-    )
-    assert login_resp.status_code == 200

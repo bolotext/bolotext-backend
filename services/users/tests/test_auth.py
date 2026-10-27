@@ -9,8 +9,8 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_login_success(client):
-    await make_user(None, Role.SUPER_ADMIN, "super@example.com", password="password123")
-    resp = await client.post("/api/v1/auth/login", json={"email": "super@example.com", "password": "password123"})
+    await make_user(None, Role.SUPER_ADMIN, "super@example.com")
+    resp = await client.post("/api/v1/auth/login", json={"credential": "super@example.com"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
     body = data(resp)
@@ -18,9 +18,9 @@ async def test_login_success(client):
     assert body["refresh_token"]
 
 
-async def test_login_wrong_password(client):
-    await make_user(None, Role.SUPER_ADMIN, "super2@example.com", password="password123")
-    resp = await client.post("/api/v1/auth/login", json={"email": "super2@example.com", "password": "wrong"})
+async def test_login_invalid_google_credential(client):
+    await make_user(None, Role.SUPER_ADMIN, "super2@example.com")
+    resp = await client.post("/api/v1/auth/login", json={"credential": "invalid"})
     assert resp.status_code == 200
     assert code(resp) == 401
     assert resp.json()["status"] == "error"
@@ -28,22 +28,22 @@ async def test_login_wrong_password(client):
 
 
 async def test_login_unknown_email(client):
-    resp = await client.post("/api/v1/auth/login", json={"email": "nobody@example.com", "password": "password123"})
+    resp = await client.post("/api/v1/auth/login", json={"credential": "nobody@example.com"})
     assert resp.status_code == 200
     assert code(resp) == 401
 
 
 async def test_login_disabled_account(client):
-    await make_user(None, Role.SUPER_ADMIN, "super3@example.com", password="password123", status=UserStatus.DISABLED)
-    resp = await client.post("/api/v1/auth/login", json={"email": "super3@example.com", "password": "password123"})
+    await make_user(None, Role.SUPER_ADMIN, "super3@example.com", status=UserStatus.DISABLED)
+    resp = await client.post("/api/v1/auth/login", json={"credential": "super3@example.com"})
     assert resp.status_code == 200
     assert code(resp) == 401
 
 
 async def test_refresh_then_logout_revokes_token(client):
-    await make_user(None, Role.SUPER_ADMIN, "super4@example.com", password="password123")
+    await make_user(None, Role.SUPER_ADMIN, "super4@example.com")
     login_resp = await client.post(
-        "/api/v1/auth/login", json={"email": "super4@example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"credential": "super4@example.com"}
     )
     refresh_token = data(login_resp)["refresh_token"]
 

@@ -11,7 +11,7 @@ from agents_service.agent_details.schema import AgentDetails, AgentDetailsUpdate
 from agents_service.agents import repository as agent_repo
 from agents_service.agents.model import Agent, AgentStatus
 from agents_service.agents.schema import SECTIONS, AgentIdentitySummary, AgentListItem, AgentOut, EnvironmentSummary
-from agents_service.core.deps import AuthContext
+from agents_service.core.deps import AuthContext, write_environment
 from agents_service.dynamic_message.schema import DynamicMessageSettingsUpdate
 from agents_service.post_call_trigger.schema import PostCallTriggerSettings, PostCallTriggerSettingsUpdate
 from agents_service.prompt import service as prompt_service
@@ -125,10 +125,14 @@ async def _get_config(agent_id: PydanticObjectId, environment: Environment = "de
 async def get_agent_with_config(
     agent_id: PydanticObjectId,
     auth: AuthContext,
-    environment: Environment = "development",
+    environment: Environment | None = None,
     *,
     write: bool = True,
 ) -> tuple[Agent, AgentConfig]:
+    # Unspecified: writes follow the request's `?env=` (development
+    # or stage — see core.deps.bind_write_environment); reads stay on development.
+    if environment is None:
+        environment = write_environment.get() if write else "development"
     agent = await get_owned_agent(agent_id, auth, write=write)
     config = await _get_config(agent.id, environment)
     return agent, config

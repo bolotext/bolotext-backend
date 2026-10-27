@@ -24,7 +24,6 @@ def _to_out(user: User, membership: OrganizationMembership | None) -> UserOut:
         role=membership.role if membership else None,
         is_super_admin=user.is_super_admin,
         status=user.status,
-        must_change_password=user.must_change_password,
         created_by=str(user.created_by) if user.created_by else None,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -84,19 +83,14 @@ async def get_my_organizations(auth: AuthContext = Depends(get_current_auth)) ->
     summary="Update the caller's own profile",
 )
 async def update_me(payload: UserSelfUpdate, auth: AuthContext = Depends(get_current_auth)) -> dict:
-    """Updates the caller's own name and/or password. Changing the password
-    requires `current_password` and revokes all of the caller's existing
-    refresh tokens (every other logged-in session is signed out).
+    """Updates the caller's own display name.
 
     **Auth:** Bearer access token required (any authenticated user).
 
     **Errors:**
-    - `UNAUTHORIZED` — missing/invalid/expired access token, or `password`
-      was supplied with a missing/incorrect `current_password`.
+    - `UNAUTHORIZED` — missing/invalid/expired access token.
     """
-    updated = await user_service.update_self(
-        auth, full_name=payload.full_name, password=payload.password, current_password=payload.current_password
-    )
+    updated = await user_service.update_self(auth, full_name=payload.full_name)
     membership = None
     if not auth.is_super_admin:
         membership = OrganizationMembership(
@@ -130,7 +124,6 @@ async def create_user(
     user, membership = await user_service.create_user(
         auth,
         email=payload.email,
-        password=payload.password,
         full_name=payload.full_name,
         role=payload.role,
         organization_id=payload.organization_id,
@@ -201,10 +194,8 @@ async def update_user(
     user_id: PydanticObjectId = Path(description="The user to update."),
     auth: AuthContext = Depends(require_permission("user.update")),
 ) -> dict:
-    """Updates another user's name, role, status, and/or resets their
-    password. Only the fields supplied are changed. Resetting the password
-    revokes all of that user's existing refresh tokens (every one of their
-    logged-in sessions is signed out).
+    """Updates another user's name, role, and/or status. Only the fields
+    supplied are changed.
 
     A Super Admin changing `role` is only allowed when the target user
     belongs to exactly one organization (otherwise which membership to
@@ -227,7 +218,6 @@ async def update_user(
         full_name=payload.full_name,
         role=payload.role,
         status=payload.status,
-        password=payload.password,
     )
     return success_response(message="User updated", data=_to_out(user, membership))
 

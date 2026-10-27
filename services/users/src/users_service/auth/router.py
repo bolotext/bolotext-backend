@@ -31,12 +31,14 @@ settings = get_settings()
 @router.post(
     "/login",
     response_model=SuccessResponse[LoginResponse],
-    summary="Log in and obtain access/refresh tokens",
+    summary="Log in with Google and obtain access/refresh tokens",
 )
 @limiter.limit(settings.login_rate_limit)
 async def login(request: Request, payload: LoginRequest) -> dict:
-    """Authenticates by email/password and returns a bearer access token and
-    refresh token pair for the selected organization.
+    """Authenticates with a Google ID token and returns a bearer access token
+    and refresh token pair for the selected organization. Google is the only
+    supported login method; the verified Google email must match an existing
+    active account.
 
     If the account belongs to more than one organization and `organization_id`
     wasn't supplied, no tokens are issued — the response instead carries
@@ -47,13 +49,14 @@ async def login(request: Request, payload: LoginRequest) -> dict:
     first place.
 
     **Errors:**
-    - `UNAUTHORIZED` — email/password don't match, or the account is not
-      active (invited/disabled).
+    - `UNAUTHORIZED` — the Google credential is invalid or unverified, no
+      account exists for its email, or the account is not active
+      (invited/disabled).
     - `TOO_MANY_REQUESTS` — this endpoint is rate-limited per the configured
       login rate limit; exceeded limits are rejected before credentials are
       even checked.
     """
-    result = await auth_service.login(payload.email, payload.password, payload.organization_id)
+    result = await auth_service.login(payload.credential, payload.organization_id)
     if result.requires_selection:
         return success_response(
             message="Select an organization to continue",

@@ -38,8 +38,7 @@ async def create_organization(
     payload: OrganizationCreate, auth: AuthContext = Depends(require_permission("organization.create"))
 ) -> dict:
     """Creates a new tenant organization, optionally bootstrapping its first
-    Admin user in the same call when `admin_email`/`admin_password` are
-    supplied.
+    Admin user in the same call when `admin_email` is supplied.
 
     **Auth:** Requires the `organization.create` permission for the caller's
     role.
@@ -53,7 +52,6 @@ async def create_organization(
         slug=payload.slug,
         created_by=auth.user_id,
         admin_email=payload.admin_email,
-        admin_password=payload.admin_password,
         admin_full_name=payload.admin_full_name,
     )
     data = OrganizationCreateResponse(

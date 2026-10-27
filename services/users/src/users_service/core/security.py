@@ -3,24 +3,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import bcrypt
 import jwt
 from common.jwt import ACCESS_TOKEN_TYPE, REFRESH_TOKEN_TYPE, decode_token  # noqa: F401 (re-exported)
 
 from users_service.core.config import get_settings
 
 settings = get_settings()
-
-
-def hash_password(plain_password: str) -> str:
-    return bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
-    except ValueError:
-        return False
 
 
 def _create_token(subject: str, token_type: str, expires_delta: timedelta, extra_claims: dict[str, Any]) -> str:

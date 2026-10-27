@@ -12,7 +12,6 @@ class OrganizationCreate(BaseModel):
                 "name": "Example Bank",
                 "slug": "example-bank",
                 "admin_email": "admin@example-bank.example",
-                "admin_password": "<password>",
                 "admin_full_name": "Jane Admin",
             }
         }
@@ -24,9 +23,6 @@ class OrganizationCreate(BaseModel):
     # Optional bootstrap of the first Admin user for this org
     admin_email: EmailStr | None = Field(
         default=None, description="Email for the org's first Admin user, if bootstrapping one now."
-    )
-    admin_password: str | None = Field(
-        default=None, min_length=8, description="Password for the bootstrapped Admin user (min. 8 characters)."
     )
     admin_full_name: str | None = Field(default=None, description="Full name for the bootstrapped Admin user.")
 
@@ -49,5 +45,5 @@ class OrganizationOut(BaseModel):
 class OrganizationCreateResponse(BaseModel):
     organization: OrganizationOut
     admin_user_id: str | None = Field(
-        default=None, description="Id of the bootstrapped Admin user, if `admin_email`/`admin_password` were supplied."
+        default=None, description="Id of the bootstrapped Admin user, if `admin_email` was supplied."
     )

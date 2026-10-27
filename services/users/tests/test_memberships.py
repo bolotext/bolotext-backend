@@ -27,7 +27,7 @@ async def test_admin_adds_existing_user_to_own_org(client):
     # dev_b now has two memberships with two different roles.
     login_resp = await client.post(
         "/api/v1/auth/login",
-        json={"email": "dev-mem-b@example.com", "password": "password123", "organization_id": str(org_a.id)},
+        json={"credential": "dev-mem-b@example.com", "organization_id": str(org_a.id)},
     )
     assert code(login_resp) == 200
     access_token = data(login_resp)["access_token"]
@@ -84,7 +84,7 @@ async def test_admin_updates_and_removes_member_role(client):
     assert code(remove_resp) == 200
 
     login_resp = await client.post(
-        "/api/v1/auth/login", json={"email": "dev-mem-f@example.com", "password": "password123"}
+        "/api/v1/auth/login", json={"credential": "dev-mem-f@example.com"}
     )
     assert code(login_resp) == 401
 
@@ -129,3 +129,26 @@ async def test_get_my_organizations(client):
     assert code(my_orgs_resp) == 200
     by_org = {o["organization_id"]: o["role"] for o in data(my_orgs_resp)}
     assert by_org == {str(org_a.id): "ADMIN", str(org_b.id): "DEVELOPER"}
+
+
+async def test_create_user_with_existing_email_adds_membership_in_other_org(client):
+    org_a = await make_org("Org A2", "org-a2")
+    org_b = await make_org("Org B2", "org-b2")
+    admin_b = await make_user(org_b.id, Role.ADMIN, "admin-b2@example.com")
+    await make_user(org_a.id, Role.DEVELOPER, "shared@example.com")
+
+    resp = await client.post(
+        "/api/v1/users",
+        headers=auth_header(admin_b),
+        json={"email": "shared@example.com", "full_name": "Shared", "role": "QA"},
+    )
+    assert code(resp) == 201
+    assert data(resp)["organization_id"] == str(org_b.id)
+    assert data(resp)["role"] == "QA"
+
+    again = await client.post(
+        "/api/v1/users",
+        headers=auth_header(admin_b),
+        json={"email": "shared@example.com", "full_name": "Shared", "role": "QA"},
+    )
+    assert code(again) == 409
