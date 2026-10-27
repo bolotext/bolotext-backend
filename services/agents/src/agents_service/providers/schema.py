@@ -9,6 +9,16 @@ class LanguageOption(BaseModel):
     code: str = Field(..., description="Language code to set as `transcriber.language`, e.g. `en-IN`.")
 
 
+class VoiceOption(BaseModel):
+    """One TTS voice with the metadata the voice picker filters on."""
+
+    voice_id: str = Field(..., description="Voice id to store as `voice_persona.voice_id`.")
+    label: str = Field(..., description="Human-readable voice name, e.g. `Haley`.")
+    gender: str | None = Field(None, description="`female` or `male`, for the voice picker's gender filter.")
+    language: str | None = Field(None, description="Language the voice speaks, e.g. `English`.")
+    accent: str | None = Field(None, description="Accent, e.g. `American`, where the provider publishes one.")
+
+
 class ModelInfo(BaseModel):
     """One model (or, under a TTS provider, one voice) offered by a
     provider — an entry in `ProviderInfo.models`."""
@@ -33,6 +43,7 @@ class ModelInfo(BaseModel):
     function_calling: bool = Field(False, description="Whether this model supports function/tool calling (relevant to LLM models only).")
     supported_languages: list[LanguageOption] = Field([], description="Languages this model supports (STT models). Offer these in the language picker and store the chosen `code` as `transcriber.language`.")
     voice_ids: list[str] = Field([], description="Voice ids this model offers (TTS models). Offer these in the voice picker and store the chosen one as `voice_persona.voice_id`.")
+    voices: list[VoiceOption] = Field([], description="Optional richer metadata for `voice_ids` (label, gender, language). When present, it lists the same voices as `voice_ids`.")
 
 
 class ProviderInfo(BaseModel):

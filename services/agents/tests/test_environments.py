@@ -140,3 +140,69 @@ async def test_environments_are_scoped_to_the_owning_org(client):
     set_auth(client.app, "user-2", "org-2")
     resp = await client.get(f"/api/v1/agents/{agent_id}/environments/stage")
     assert resp.json()["errors"]["type"] == "NOT_FOUND"
+
+
+async def test_config_by_query_params(client):
+    set_auth(client.app, "user-1", "org-1")
+    agent_id = await _make_ready_agent(client, "Queryable")
+
+    dev = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "development"})
+    assert code(dev) == 200
+    assert data(dev)["environment"] == "development"
+
+    # Not promoted yet -> 404, not an empty config.
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})) == 404
+
+    await client.post(f"/api/v1/agents/{agent_id}/move-to-stage")
+    for alias in ("staging", "stage"):
+        resp = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": alias})
+        assert code(resp) == 200
+        assert data(resp)["environment"] == "stage"
+        assert data(resp)["llm"]["provider_id"] == "openai"
+
+    await client.post(f"/api/v1/agents/{agent_id}/move-to-prod")
+    prod = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "production"})
+    assert data(prod)["environment"] == "production"
+
+
+async def test_config_by_query_params_validation_and_ownership(client):
+    set_auth(client.app, "user-1", "org-1")
+    agent_id = await _make_ready_agent(client, "Mine")
+
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "qa"})) == 422
+    assert code(await client.get("/api/v1/agents/config", params={"environment": "development"})) == 422
+
+    set_auth(client.app, "user-2", "org-2")
+    other = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "development"})
+    assert code(other) == 404
+
+
+async def test_api_token_reads_config_but_only_on_the_config_route(client):
+    from agents_service.core import http_client
+    from agents_service.core.deps import get_current_auth, get_introspection
+    from agents_service.core.http_client import IntrospectResult
+
+    set_auth(client.app, "user-1", "org-1")
+    agent_id = await _make_ready_agent(client, "Tokenised")
+    await client.post(f"/api/v1/agents/{agent_id}/move-to-stage")
+
+    # Switch to a real introspection result for an API token (no user override).
+    client.app.dependency_overrides.pop(get_current_auth, None)
+    result = IntrospectResult(active=True, token_type="api_token", scopes=["agent-config:read"], token_id="t1")
+    client.app.dependency_overrides[get_introspection] = lambda: result
+
+    ok = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})
+    assert code(ok) == 200 and data(ok)["environment"] == "stage"  # no ownership needed
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "production"})) == 404
+    missing = "000000000000000000000000"
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": missing, "environment": "development"})) == 404
+
+    # The token is rejected everywhere else.
+    assert code(await client.get(f"/api/v1/agents/{agent_id}")) == 401
+    assert code(await client.get("/api/v1/agents")) == 401
+
+    # A token without the scope is forbidden, a revoked/unknown one unauthorized.
+    client.app.dependency_overrides[get_introspection] = lambda: IntrospectResult(active=True, token_type="api_token", scopes=[])
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})) == 403
+    client.app.dependency_overrides[get_introspection] = lambda: IntrospectResult(active=False)
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})) == 401

@@ -1,6 +1,7 @@
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from users_service.api_tokens.model import ApiToken
 from users_service.auth.model import RefreshToken
 from users_service.core.config import get_settings
 from users_service.memberships.model import OrganizationMembership
@@ -42,6 +43,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
             User,
             OrganizationMembership,
             RefreshToken,
+            ApiToken,
             RoleDoc,
             Permission,
             RolePermissionMapping,

@@ -79,3 +79,4 @@ async def get_tts_providers(auth: AuthContext = Depends(get_current_auth)) -> di
     token is missing/invalid/expired.
     """
     return success_response(data=provider_service.get_tts_providers())
+

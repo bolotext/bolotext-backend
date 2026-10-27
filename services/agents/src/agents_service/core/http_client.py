@@ -35,6 +35,12 @@ class IntrospectResult(BaseModel):
     user_id: str | None = None
     organization_id: str | None = None
     role: str | None = None
+    # "api_token" for a Super-Admin-issued, non-expiring service token (see
+    # the Users service's /api-tokens); those carry `scopes` instead of a
+    # user/role identity.
+    token_type: str = "user"
+    scopes: list[str] = []
+    token_id: str | None = None
 
 
 async def introspect(access_token: str) -> IntrospectResult:

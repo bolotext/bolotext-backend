@@ -7,6 +7,7 @@ from common.schemas import SuccessResponse
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
 
+from users_service.api_tokens import service as api_token_service
 from users_service.auth import service as auth_service
 from users_service.auth.schema import (
     AccessTokenResponse,
@@ -153,7 +154,10 @@ class IntrospectResponse(BaseModel):
     organization_id: str | None = Field(
         default=None, description="The organization the token is scoped to. `null` for a Super Admin or when `active` is false."
     )
-    role: str | None = Field(default=None, description="The user's role, re-resolved from current membership (never trusted from the token). `null` when `active` is false.")
+    role: str | None = Field(default=None, description="The user's role, re-resolved from current membership (never trusted from the token). `null` when `active` is false, and for API tokens.")
+    token_type: str = Field(default="user", description='`"user"` for a user access token, `"api_token"` for a Super-Admin-issued API token.')
+    scopes: list[str] = Field(default_factory=list, description="What an API token may do (e.g. `agent-config:read`). Empty for user tokens.")
+    token_id: str | None = Field(default=None, description="The API token's id. `null` for user tokens.")
 
 
 @internal_router.post(
@@ -184,6 +188,17 @@ async def introspect(
     """
     if x_internal_api_key != settings.internal_api_key:
         raise UnauthorizedError("Invalid internal API key")
+
+    # API tokens (non-expiring, Super-Admin-issued) are opaque, not JWTs.
+    if payload.access_token.startswith(api_token_service.TOKEN_PREFIX):
+        record = await api_token_service.resolve(payload.access_token)
+        if record is None:
+            return success_response(data=IntrospectResponse(active=False))
+        return success_response(
+            data=IntrospectResponse(
+                active=True, token_type="api_token", scopes=record.scopes, token_id=str(record.id)
+            )
+        )
 
     try:
         claims = decode_token(payload.access_token, settings.jwt_secret, settings.jwt_algorithm)

@@ -7,6 +7,7 @@ from common.schemas import SuccessResponse
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
+from users_service.api_tokens.router import router as api_tokens_router
 from users_service.auth.router import internal_router as auth_internal_router
 from users_service.auth.router import router as auth_router
 from users_service.core.config import get_settings
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(organizations_router, prefix=api_v1)
     app.include_router(memberships_router, prefix=api_v1)
     app.include_router(users_router, prefix=api_v1)
+    app.include_router(api_tokens_router, prefix=api_v1)
     app.include_router(auth_internal_router, prefix=api_v1)
 
     @app.get(

@@ -1,6 +1,7 @@
 from common.enums import Role
 
-from agents_service.core.deps import AuthContext, get_current_auth
+from agents_service.core.deps import AuthContext, get_current_auth, get_introspection
+from agents_service.core.http_client import IntrospectResult
 
 
 def set_auth(app, user_id: str, org_id: str | None, role: Role = Role.ADMIN) -> None:
@@ -9,6 +10,11 @@ def set_auth(app, user_id: str, org_id: str | None, role: Role = Role.ADMIN) -> 
     """
     app.dependency_overrides[get_current_auth] = lambda: AuthContext(
         user_id=user_id, organization_id=org_id, role=role
+    )
+    # Routes that also accept API tokens (get_config_auth) resolve identity from
+    # the introspection result rather than get_current_auth.
+    app.dependency_overrides[get_introspection] = lambda: IntrospectResult(
+        active=True, user_id=user_id, organization_id=org_id, role=str(role)
     )
 
 

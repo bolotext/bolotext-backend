@@ -1,3 +1,5 @@
+from typing import Literal
+
 from beanie import PydanticObjectId
 from common.responses import success_response
 from common.schemas import SuccessResponse
@@ -8,7 +10,7 @@ from agents_service.agent_details.schema import AgentDetails
 from agents_service.agents import service as agent_service
 from agents_service.agents.model import AgentStatus
 from agents_service.agents.schema import AgentListItem, AgentOut, AgentStatusUpdate, EnvironmentSummary
-from agents_service.core.deps import AuthContext, get_current_auth
+from agents_service.core.deps import AuthContext, ServiceAuth, get_config_auth, get_current_auth
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -48,6 +50,42 @@ async def list_agents(
     """
     agents = await agent_service.list_agents(auth, skip=skip, limit=limit, status=status)
     return success_response(data=[agent_service.to_list_item(agent) for agent in agents])
+
+
+# Declared before `/{agent_id}` so "config" isn't parsed as an agent id.
+@router.get(
+    "/config",
+    response_model=SuccessResponse[AgentOut],
+    summary="Get an agent's config for an environment (query params)",
+)
+async def get_agent_config(
+    agent_id: PydanticObjectId = Query(description="The agent's id."),
+    environment: Literal["development", "staging", "stage", "production"] = Query(
+        description='Which environment to read: "development", "staging" (alias "stage") or "production".'
+    ),
+    auth: AuthContext | ServiceAuth = Depends(get_config_auth),
+) -> dict:
+    """Returns the agent's full config (identity plus every builder-tab
+    section) as it exists in the requested environment. Same payload as
+    `GET /agents/{agent_id}/environments/{environment}`, addressed by query
+    parameters instead of path segments.
+
+    **Auth:** bearer token required — either a user JWT (the caller must own
+    the agent) or a Super-Admin-issued, non-expiring API token with the
+    `agent-config:read` scope (create one via `POST /api-tokens`), which can
+    read any agent's config. API tokens work only on this route.
+
+    **Errors:** `NOT_FOUND` if no such agent exists, it belongs to another
+    caller, or the environment has never been populated (`staging`/
+    `production` before the first promotion). `UNPROCESSABLE_ENTITY` for a
+    missing/invalid `agent_id` or an unknown `environment`.
+    """
+    env: Environment = "stage" if environment == "staging" else environment
+    if isinstance(auth, ServiceAuth):
+        agent, config = await agent_service.get_agent_environment_for_service(agent_id, env)
+    else:
+        agent, config = await agent_service.get_agent_environment(agent_id, auth, env)
+    return success_response(data=agent_service.to_out(agent, config))
 
 
 @router.get("/{agent_id}", response_model=SuccessResponse[AgentOut], summary="Get an agent")

@@ -3,6 +3,9 @@ Mongo collection: it's read-only, small, and changes only on deploy — see
 providers/service.py for the in-process cache in front of it.
 """
 
+from agents_service.providers.deepgram_aura1_voices import DEEPGRAM_AURA1_VOICES
+from agents_service.providers.deepgram_aura2_voices import DEEPGRAM_AURA2_VOICES
+from agents_service.providers.deepgram_flux_voices import DEEPGRAM_FLUX_VOICES
 from agents_service.providers.schema import ModelInfo, ProviderInfo
 
 LLM_PROVIDERS: list[ProviderInfo] = [
@@ -98,19 +101,19 @@ TTS_PROVIDERS: list[ProviderInfo] = [
                 model_id="tts-1",
                 label="GPT-4o TTS",
                 description="Multilingual text-to-speech model.",
-                voice_ids=["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
+                voice_ids=["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
             ),
             ModelInfo(
                 model_id="tts-1-hd",
                 label="GPT-4o TTS HD",
                 description="High-quality multilingual text-to-speech model.",
-                voice_ids=["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
+                voice_ids=["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
             ),
             ModelInfo(
                 model_id="gpt-4o-mini-tts",
                 label="GPT-4o TTS HD",
                 description="High-quality multilingual text-to-speech model.",
-                voice_ids=["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
+                voice_ids=["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"],
             ),
         ],
     ),
@@ -124,7 +127,22 @@ TTS_PROVIDERS: list[ProviderInfo] = [
                 model_id="aura-2",
                 label="Aura-2",
                 description="Real-time streaming TTS model.",
-                voice_ids=["en", "hi", "multi"],
+                voice_ids=[v.voice_id for v in DEEPGRAM_AURA2_VOICES],
+                voices=DEEPGRAM_AURA2_VOICES,
+            ),
+            ModelInfo(
+                model_id="aura",
+                label="Aura",
+                description="Aura (v1) English streaming TTS model.",
+                voice_ids=[v.voice_id for v in DEEPGRAM_AURA1_VOICES],
+                voices=DEEPGRAM_AURA1_VOICES,
+            ),
+            ModelInfo(
+                model_id="flux",
+                label="Flux TTS",
+                description="Conversational streaming TTS. Voice ids are Deepgram `flux-{voice}-{language}` model strings.",
+                voice_ids=[v.voice_id for v in DEEPGRAM_FLUX_VOICES],
+                voices=DEEPGRAM_FLUX_VOICES,
             ),
         ],
     ),

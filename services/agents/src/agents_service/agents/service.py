@@ -495,6 +495,20 @@ async def get_agent_environment(
     return agent, config
 
 
+async def get_agent_environment_for_service(agent_id: PydanticObjectId, environment: Environment) -> tuple[Agent, AgentConfig]:
+    """Like get_agent_environment but for an API token (no user, so no ownership
+    check — the token's `agent-config:read` scope is the authorization). Never
+    self-heals: an unpromoted environment 404s.
+    """
+    agent = await agent_repo.get_by_id(agent_id)
+    if agent is None:
+        raise NotFoundError("Agent not found")
+    config = await config_repo.get_by_agent_id(agent.id, environment)
+    if config is None:
+        raise NotFoundError(f"Agent has no '{environment}' config yet")
+    return agent, config
+
+
 async def list_environment_summaries(agent_id: PydanticObjectId, auth: AuthContext) -> list[EnvironmentSummary]:
     agent = await get_owned_agent(agent_id, auth, write=False)
     configs_by_env = {config.environment: config for config in await config_repo.list_by_agent_id(agent.id)}
