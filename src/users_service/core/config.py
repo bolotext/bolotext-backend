@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +20,7 @@ class Settings(BaseSettings):
 
     # Mongo
     mongo_uri: str = "mongodb://localhost:27017"
-    mongo_db_name: str = Field("bolotext_users", validation_alias="USERS_MONGO_DB_NAME")
+    mongo_db_name: str = "bolotext"
 
     # JWT (this secret is shared with the API Gateway / other services that
     # need to verify tokens this service issues; keep it identical across them)

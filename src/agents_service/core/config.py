@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +20,7 @@ class Settings(BaseSettings):
 
     # Mongo
     mongo_uri: str = "mongodb://localhost:27017"
-    mongo_db_name: str = Field("bolotext_agents", validation_alias="AGENTS_MONGO_DB_NAME")
+    mongo_db_name: str = "bolotext"
 
     # Identity is resolved in-process by the Users service's introspection
     # logic rather than decoding JWTs locally — see agents_service.core.http_client.
