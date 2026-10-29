@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,14 +21,11 @@ class Settings(BaseSettings):
 
     # Mongo
     mongo_uri: str = "mongodb://localhost:27017"
-    mongo_db_name: str = "bolotext_agents"
+    mongo_db_name: str = Field("bolotext_agents", validation_alias="AGENTS_MONGO_DB_NAME")
 
-    # Identity is resolved by calling the Users service's internal
-    # introspection endpoint (POST /api/v1/internal/introspect) rather than
-    # decoding JWTs locally — see agents_service.core.http_client.
-    users_service_url: str = "http://localhost:8001"
+    # Identity is resolved in-process by the Users service's introspection
+    # logic rather than decoding JWTs locally — see agents_service.core.http_client.
     internal_api_key: str = "change-me-internal-key"
-    introspect_timeout_seconds: float = 5.0
 
     # Provider/model registry cache TTL (in-process cache; the seed data
     # itself is code, not a DB collection — see agents_service.providers).

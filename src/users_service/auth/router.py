@@ -162,6 +162,70 @@ class IntrospectResponse(BaseModel):
     features: list[str] | None = Field(default=None, description="Product areas the token's organization may use, re-read on every call. `null` = unrestricted (Super Admins, API tokens).")
 
 
+async def resolve_access_token(access_token: str) -> IntrospectResponse:
+    """Resolves identity from an access token. Used by the introspection endpoint
+    and called in-process by the Agents routers (see agents_service.core.http_client).
+    """
+    # API tokens (non-expiring, Super-Admin-issued) are opaque, not JWTs.
+    if access_token.startswith(api_token_service.TOKEN_PREFIX):
+        record = await api_token_service.resolve(access_token)
+        if record is None:
+            return IntrospectResponse(active=False)
+        return IntrospectResponse(
+            active=True, token_type="api_token", scopes=record.scopes, token_id=str(record.id)
+        )
+
+    try:
+        claims = decode_token(access_token, settings.jwt_secret, settings.jwt_algorithm)
+    except jwt.InvalidTokenError:
+        return IntrospectResponse(active=False)
+
+    if claims.get("type") != ACCESS_TOKEN_TYPE:
+        return IntrospectResponse(active=False)
+
+    user_id = claims.get("sub")
+    if not user_id:
+        return IntrospectResponse(active=False)
+
+    # Never trust `role` from the token (there isn't one any more) — always
+    # re-read the user and, for non-Super-Admins, the membership fresh, so a
+    # disablement/role-change/removal-from-org takes effect immediately
+    # instead of waiting out the access token's lifetime. See
+    # users_service.core.deps.get_current_auth, which applies the same rule.
+    try:
+        user = await user_repo.get_by_id_global(PydanticObjectId(user_id))
+    except Exception:
+        return IntrospectResponse(active=False)
+    if user is None or user.status != UserStatus.ACTIVE:
+        return IntrospectResponse(active=False)
+
+    if user.is_super_admin:
+        # Carry the organization the Super Admin switched into, if it still exists.
+        switched_org = await resolve_super_admin_org(claims.get("organization_id"))
+        return IntrospectResponse(
+            active=True,
+            user_id=user_id,
+            organization_id=str(switched_org) if switched_org else None,
+            role="SUPER_ADMIN",
+        )
+
+    organization_id = claims.get("organization_id")
+    if not organization_id:
+        return IntrospectResponse(active=False)
+    try:
+        membership = await membership_repo.get(user.id, PydanticObjectId(organization_id))
+    except Exception:
+        return IntrospectResponse(active=False)
+    if membership is None:
+        return IntrospectResponse(active=False)
+
+    org = await organization_repo.get_by_id(PydanticObjectId(organization_id))
+    return IntrospectResponse(
+        active=True, user_id=user_id, organization_id=organization_id, role=str(membership.role),
+        features=[str(f) for f in org.features] if org else None,
+    )
+
+
 @internal_router.post(
     "/introspect",
     response_model=SuccessResponse[IntrospectResponse],
@@ -191,67 +255,4 @@ async def introspect(
     if x_internal_api_key != settings.internal_api_key:
         raise UnauthorizedError("Invalid internal API key")
 
-    # API tokens (non-expiring, Super-Admin-issued) are opaque, not JWTs.
-    if payload.access_token.startswith(api_token_service.TOKEN_PREFIX):
-        record = await api_token_service.resolve(payload.access_token)
-        if record is None:
-            return success_response(data=IntrospectResponse(active=False))
-        return success_response(
-            data=IntrospectResponse(
-                active=True, token_type="api_token", scopes=record.scopes, token_id=str(record.id)
-            )
-        )
-
-    try:
-        claims = decode_token(payload.access_token, settings.jwt_secret, settings.jwt_algorithm)
-    except jwt.InvalidTokenError:
-        return success_response(data=IntrospectResponse(active=False))
-
-    if claims.get("type") != ACCESS_TOKEN_TYPE:
-        return success_response(data=IntrospectResponse(active=False))
-
-    user_id = claims.get("sub")
-    if not user_id:
-        return success_response(data=IntrospectResponse(active=False))
-
-    # Never trust `role` from the token (there isn't one any more) — always
-    # re-read the user and, for non-Super-Admins, the membership fresh, so a
-    # disablement/role-change/removal-from-org takes effect immediately
-    # instead of waiting out the access token's lifetime. See
-    # users_service.core.deps.get_current_auth, which applies the same rule.
-    try:
-        user = await user_repo.get_by_id_global(PydanticObjectId(user_id))
-    except Exception:
-        return success_response(data=IntrospectResponse(active=False))
-    if user is None or user.status != UserStatus.ACTIVE:
-        return success_response(data=IntrospectResponse(active=False))
-
-    if user.is_super_admin:
-        # Carry the organization the Super Admin switched into, if it still exists.
-        switched_org = await resolve_super_admin_org(claims.get("organization_id"))
-        return success_response(
-            data=IntrospectResponse(
-                active=True,
-                user_id=user_id,
-                organization_id=str(switched_org) if switched_org else None,
-                role="SUPER_ADMIN",
-            )
-        )
-
-    organization_id = claims.get("organization_id")
-    if not organization_id:
-        return success_response(data=IntrospectResponse(active=False))
-    try:
-        membership = await membership_repo.get(user.id, PydanticObjectId(organization_id))
-    except Exception:
-        return success_response(data=IntrospectResponse(active=False))
-    if membership is None:
-        return success_response(data=IntrospectResponse(active=False))
-
-    org = await organization_repo.get_by_id(PydanticObjectId(organization_id))
-    return success_response(
-        data=IntrospectResponse(
-            active=True, user_id=user_id, organization_id=organization_id, role=str(membership.role),
-            features=[str(f) for f in org.features] if org else None,
-        )
-    )
+    return success_response(data=await resolve_access_token(payload.access_token))

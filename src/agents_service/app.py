@@ -16,7 +16,6 @@ from agents_service.call_logs.router import router as call_logs_router
 from agents_service.analytics.router import router as analytics_router
 from agents_service.core.config import get_settings
 from agents_service.core.deps import bind_write_environment, require_feature
-from agents_service.core.http_client import close_http_client
 from agents_service.db.mongodb import close_db, get_client, init_db
 from agents_service.deployment.router import router as deployment_router
 from agents_service.dynamic_message.router import router as dynamic_message_router
@@ -98,19 +97,10 @@ async def lifespan(app: FastAPI):
     await init_db(get_client())
     yield
     await close_db()
-    await close_http_client()
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title=settings.app_name,
-        version="1.0.0",
-        description=API_DESCRIPTION,
-        openapi_tags=TAGS_METADATA,
-        lifespan=lifespan,
-    )
-    register_exception_handlers(app)
-
+def register_routes(app: FastAPI) -> None:
+    """The Agents routers; shared by this app and the combined backend app."""
     api_v1 = "/api/v1"
     # agents_router owns whole-agent operations (create/list/get/replace/delete/
     # publish/clone); every tab's own router owns its PATCH .../{section} route
@@ -147,6 +137,18 @@ def create_app() -> FastAPI:
     app.include_router(providers_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(whatsapp_router, prefix=api_v1)
     app.include_router(whatsapp_status_router, prefix=api_v1)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title=settings.app_name,
+        version="1.0.0",
+        description=API_DESCRIPTION,
+        openapi_tags=TAGS_METADATA,
+        lifespan=lifespan,
+    )
+    register_exception_handlers(app)
+    register_routes(app)
 
     @app.get(
         "/health",

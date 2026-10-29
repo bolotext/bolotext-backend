@@ -73,6 +73,20 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
+def register_routes(app: FastAPI) -> None:
+    """Rate limiting and the Users routers; shared by this app and the combined backend app."""
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+    api_v1 = "/api/v1"
+    app.include_router(auth_router, prefix=api_v1)
+    app.include_router(organizations_router, prefix=api_v1)
+    app.include_router(memberships_router, prefix=api_v1)
+    app.include_router(users_router, prefix=api_v1)
+    app.include_router(api_tokens_router, prefix=api_v1)
+    app.include_router(auth_internal_router, prefix=api_v1)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
@@ -82,17 +96,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     register_exception_handlers(app)
-
-    api_v1 = "/api/v1"
-    app.include_router(auth_router, prefix=api_v1)
-    app.include_router(organizations_router, prefix=api_v1)
-    app.include_router(memberships_router, prefix=api_v1)
-    app.include_router(users_router, prefix=api_v1)
-    app.include_router(api_tokens_router, prefix=api_v1)
-    app.include_router(auth_internal_router, prefix=api_v1)
+    register_routes(app)
 
     @app.get(
         "/health",
