@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     # itself is code, not a DB collection — see agents_service.providers).
     provider_cache_ttl_seconds: float = 300.0
 
+    # WhatsApp Business messaging. Twilio credentials and sender settings are
+    # stored per organization in the DB (see agents_service.whatsapp.service,
+    # edited from the UI) — only platform-wide tuning and the key that encrypts
+    # the stored auth token live here. If WHATSAPP_ENCRYPTION_KEY (a Fernet key)
+    # is unset, a key is derived from INTERNAL_API_KEY; set it explicitly in
+    # production so rotating the internal key can't orphan stored tokens.
+    whatsapp_encryption_key: str = ""
+    whatsapp_max_csv_rows: int = 5000
+    whatsapp_send_concurrency: int = 5
+    whatsapp_send_delay_ms: int = 100
+
 
 @lru_cache
 def get_settings() -> Settings:

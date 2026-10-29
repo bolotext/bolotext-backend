@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from users_service.core.security import ACCESS_TOKEN_TYPE, decode_own_token
 from users_service.enums import UserStatus
 from users_service.memberships import repository as membership_repo
+from users_service.organizations.model import Organization
 from users_service.permissions.service import PermissionService
 from users_service.users.model import User
 
@@ -71,7 +72,14 @@ async def get_current_auth(
         raise UnauthorizedError("User is not active")
 
     if user.is_super_admin:
-        return AuthContext(user=user, organization_id=None, role=Role.SUPER_ADMIN)
+        # A Super Admin has no membership, but may have switched into an
+        # organization (see /auth/switch-organization): keep that context.
+        # Role stays SUPER_ADMIN. A claim for a since-deleted org is ignored.
+        return AuthContext(
+            user=user,
+            organization_id=await resolve_super_admin_org(payload.get("organization_id")),
+            role=Role.SUPER_ADMIN,
+        )
 
     organization_id_claim = payload.get("organization_id")
     if not organization_id_claim:
@@ -89,6 +97,16 @@ async def get_current_auth(
         raise UnauthorizedError("You no longer have access to this organization")
 
     return AuthContext(user=user, organization_id=organization_id, role=membership.role)
+
+
+async def resolve_super_admin_org(claim: str | None) -> PydanticObjectId | None:
+    if not claim:
+        return None
+    try:
+        org = await Organization.get(PydanticObjectId(claim))
+    except Exception:
+        return None
+    return org.id if org else None
 
 
 def require_role(*allowed_roles: Role):

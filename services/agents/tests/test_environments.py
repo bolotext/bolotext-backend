@@ -151,14 +151,15 @@ async def test_config_by_query_params(client):
     assert data(dev)["environment"] == "development"
 
     # Not promoted yet -> 404, not an empty config.
-    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})) == 404
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "stage"})) == 404
 
     await client.post(f"/api/v1/agents/{agent_id}/move-to-stage")
-    for alias in ("staging", "stage"):
-        resp = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": alias})
-        assert code(resp) == 200
-        assert data(resp)["environment"] == "stage"
-        assert data(resp)["llm"]["provider_id"] == "openai"
+    resp = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "stage"})
+    assert code(resp) == 200
+    assert data(resp)["environment"] == "stage"
+    assert data(resp)["llm"]["provider_id"] == "openai"
+    # The old "staging" alias is gone.
+    assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})) == 422
 
     await client.post(f"/api/v1/agents/{agent_id}/move-to-prod")
     prod = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "production"})
@@ -191,7 +192,7 @@ async def test_api_token_reads_config_but_only_on_the_config_route(client):
     result = IntrospectResult(active=True, token_type="api_token", scopes=["agent-config:read"], token_id="t1")
     client.app.dependency_overrides[get_introspection] = lambda: result
 
-    ok = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "staging"})
+    ok = await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "stage"})
     assert code(ok) == 200 and data(ok)["environment"] == "stage"  # no ownership needed
     assert code(await client.get("/api/v1/agents/config", params={"agent_id": agent_id, "environment": "production"})) == 404
     missing = "000000000000000000000000"

@@ -15,3 +15,8 @@ class LanguagesUpdate(BaseModel):
         description="Full list of BCP-47 language codes the agent should support (e.g. `en-IN`, `hi-IN`). "
         "Replaces the existing list entirely; must be non-empty."
     )
+
+
+class LanguageOut(BaseModel):
+    code: str = Field(description="BCP-47 language code to send in `PUT /agents/{id}/languages`, e.g. `hi-IN`.")
+    name: str = Field(description="Display name, e.g. `Hindi`.")

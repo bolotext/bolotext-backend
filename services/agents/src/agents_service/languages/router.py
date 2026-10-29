@@ -6,13 +6,28 @@ from fastapi import APIRouter, Depends, Path
 from agents_service.agents import service as agent_service
 from agents_service.agents.schema import AgentOut
 from agents_service.core.deps import AuthContext, get_current_auth
-from agents_service.languages.schema import LanguagesUpdate
+from agents_service.languages.catalog import SUPPORTED_LANGUAGES
+from agents_service.languages.schema import LanguageOut, LanguagesUpdate
 
-router = APIRouter(prefix="/agents", tags=["agents:languages"])
+router = APIRouter(tags=["agents:languages"])
+
+
+@router.get(
+    "/languages",
+    response_model=SuccessResponse[list[LanguageOut]],
+    summary="List the languages an agent can be configured with",
+)
+async def list_supported_languages(auth: AuthContext = Depends(get_current_auth)) -> dict:
+    """The fixed catalog of languages offered when creating/configuring an
+    agent. Send the `code` values to `PUT /agents/{agent_id}/languages`.
+
+    **Auth:** bearer JWT required (any authenticated user).
+    """
+    return success_response(data=[LanguageOut(**lang) for lang in SUPPORTED_LANGUAGES])
 
 
 @router.put(
-    "/{agent_id}/languages",
+    "/agents/{agent_id}/languages",
     response_model=SuccessResponse[AgentOut],
     summary="Set an agent's languages",
 )

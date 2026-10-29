@@ -1,5 +1,5 @@
 from beanie import PydanticObjectId
-from common.enums import Role
+from common.enums import Feature, Role
 from common.errors import ConflictError, NotFoundError
 
 from users_service.enums import OrganizationStatus, UserStatus
@@ -16,6 +16,7 @@ async def create_organization(
     created_by: PydanticObjectId,
     admin_email: str | None = None,
     admin_full_name: str | None = None,
+    features: list[Feature] | None = None,
 ) -> tuple[Organization, User | None]:
     if await organization_repo.get_by_slug(slug) is not None:
         raise ConflictError("An organization with this slug already exists", {"field": "slug"})
@@ -23,7 +24,7 @@ async def create_organization(
     admin_user: User | None = None
     existing_user = await user_repo.get_by_email(admin_email) if admin_email else None
 
-    org = await organization_repo.create_organization(name=name, slug=slug, created_by=created_by)
+    org = await organization_repo.create_organization(name=name, slug=slug, created_by=created_by, features=features)
 
     if admin_email:
         admin_user = existing_user or await user_repo.create_user(
@@ -54,7 +55,10 @@ async def list_organizations(
 
 
 async def update_organization(
-    organization_id: PydanticObjectId, name: str | None, status: OrganizationStatus | None
+    organization_id: PydanticObjectId,
+    name: str | None,
+    status: OrganizationStatus | None,
+    features: list[Feature] | None = None,
 ) -> Organization:
     org = await get_organization(organization_id)
-    return await organization_repo.update_organization(org, name=name, status=status)
+    return await organization_repo.update_organization(org, name=name, status=status, features=features)

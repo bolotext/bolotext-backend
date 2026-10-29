@@ -44,3 +44,13 @@ async def test_empty_languages_list_is_rejected(client):
     resp = await client.put(f"/api/v1/agents/{agent_id}/languages", json={"languages": []})
     assert code(resp) == 422
     assert resp.json()["errors"]["type"] == "UNPROCESSABLE_ENTITY"
+
+
+async def test_supported_languages_catalog(client):
+    set_auth(client.app, "user-1", "org-1")
+    resp = await client.get("/api/v1/languages")
+    assert code(resp) == 200
+    assert [lang["name"] for lang in data(resp)] == [
+        "Hindi", "English", "Kannada", "Tamil", "Telugu", "Malayalam", "Bengali", "Marathi", "Punjabi",
+    ]
+    assert data(resp)[0] == {"code": "hi-IN", "name": "Hindi"}

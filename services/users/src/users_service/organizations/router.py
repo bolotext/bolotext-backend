@@ -23,6 +23,7 @@ def _to_out(org: Organization) -> OrganizationOut:
         name=org.name,
         slug=org.slug,
         status=org.status,
+        features=org.features,
         created_by=str(org.created_by),
         created_at=org.created_at,
         updated_at=org.updated_at,
@@ -46,6 +47,7 @@ async def create_organization(
     **Errors:**
     - `FORBIDDEN` — caller lacks the `organization.create` permission.
     - `CONFLICT` — the `slug` is already in use by another organization.
+    - `VALIDATION_ERROR` — `features` is empty or has an unknown value.
     """
     org, admin_user = await organization_service.create_organization(
         name=payload.name,
@@ -53,6 +55,7 @@ async def create_organization(
         created_by=auth.user_id,
         admin_email=payload.admin_email,
         admin_full_name=payload.admin_full_name,
+        features=payload.features,
     )
     data = OrganizationCreateResponse(
         organization=_to_out(org), admin_user_id=str(admin_user.id) if admin_user else None
@@ -116,8 +119,8 @@ async def update_organization(
     payload: OrganizationUpdate,
     auth: AuthContext = Depends(require_permission("organization.update")),
 ) -> dict:
-    """Updates an organization's name and/or status (e.g. suspending it).
-    Only the fields supplied are changed.
+    """Updates an organization's name, status (e.g. suspending it) and/or the
+    product areas (`features`) it may use. Only the fields supplied are changed.
 
     **Auth:** Requires the `organization.update` permission for the caller's
     role.
@@ -126,5 +129,7 @@ async def update_organization(
     - `FORBIDDEN` — caller lacks the `organization.update` permission.
     - `NOT_FOUND` — no organization with this id exists.
     """
-    org = await organization_service.update_organization(org_id, name=payload.name, status=payload.status)
+    org = await organization_service.update_organization(
+        org_id, name=payload.name, status=payload.status, features=payload.features
+    )
     return success_response(message="Organization updated", data=_to_out(org))

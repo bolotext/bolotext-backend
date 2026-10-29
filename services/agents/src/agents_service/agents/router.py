@@ -13,6 +13,10 @@ from agents_service.agents.schema import AgentListItem, AgentOut, AgentStatusUpd
 from agents_service.core.deps import AuthContext, ServiceAuth, get_config_auth, get_current_auth
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+# Separate router so app.py can leave off the `?env=` write-environment dependency:
+# GET /agents/config takes its own `environment` param. Included before `router`
+# so "config" isn't parsed as an `/{agent_id}`.
+agent_config_router = APIRouter(prefix="/agents", tags=["agents"])
 
 _AGENT_ID_PATH = Path(description="The agent's id.")
 
@@ -52,16 +56,15 @@ async def list_agents(
     return success_response(data=[agent_service.to_list_item(agent) for agent in agents])
 
 
-# Declared before `/{agent_id}` so "config" isn't parsed as an agent id.
-@router.get(
+@agent_config_router.get(
     "/config",
     response_model=SuccessResponse[AgentOut],
     summary="Get an agent's config for an environment (query params)",
 )
 async def get_agent_config(
     agent_id: PydanticObjectId = Query(description="The agent's id."),
-    environment: Literal["development", "staging", "stage", "production"] = Query(
-        description='Which environment to read: "development", "staging" (alias "stage") or "production".'
+    environment: Literal["development", "stage", "production"] = Query(
+        description='Which environment to read: "development", "stage" or "production".'
     ),
     auth: AuthContext | ServiceAuth = Depends(get_config_auth),
 ) -> dict:
@@ -76,11 +79,11 @@ async def get_agent_config(
     read any agent's config. API tokens work only on this route.
 
     **Errors:** `NOT_FOUND` if no such agent exists, it belongs to another
-    caller, or the environment has never been populated (`staging`/
+    caller, or the environment has never been populated (`stage`/
     `production` before the first promotion). `UNPROCESSABLE_ENTITY` for a
     missing/invalid `agent_id` or an unknown `environment`.
     """
-    env: Environment = "stage" if environment == "staging" else environment
+    env: Environment = environment
     if isinstance(auth, ServiceAuth):
         agent, config = await agent_service.get_agent_environment_for_service(agent_id, env)
     else:

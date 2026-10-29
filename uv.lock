@@ -21,6 +21,7 @@ source = { editable = "services/agents" }
 dependencies = [
     { name = "beanie" },
     { name = "common" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "motor" },
@@ -39,6 +40,7 @@ dev = [
 requires-dist = [
     { name = "beanie", specifier = ">=1.29.0" },
     { name = "common", editable = "libs/common" },
+    { name = "cryptography", specifier = ">=43.0.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "motor", specifier = ">=3.6.0" },

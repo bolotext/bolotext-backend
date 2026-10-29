@@ -25,6 +25,12 @@ class Settings(BaseSettings):
 
     upstream_timeout_seconds: float = 30.0
 
+    # Optional: pin the public URL this gateway is reachable at (e.g.
+    # https://api.example.com). By default it's derived per request from
+    # X-Forwarded-Proto/Host (or Host) and passed to upstream services in
+    # `X-Public-Base-Url` — used for callbacks such as Twilio's delivery status.
+    public_url: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

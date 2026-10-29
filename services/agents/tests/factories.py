@@ -4,17 +4,20 @@ from agents_service.core.deps import AuthContext, get_current_auth, get_introspe
 from agents_service.core.http_client import IntrospectResult
 
 
-def set_auth(app, user_id: str, org_id: str | None, role: Role = Role.ADMIN) -> None:
+def set_auth(
+    app, user_id: str, org_id: str | None, role: Role = Role.ADMIN, features: list[str] | None = None
+) -> None:
     """Overrides the introspection-based auth dependency for tests, so the
     suite never needs a real Users service to call out to.
     """
     app.dependency_overrides[get_current_auth] = lambda: AuthContext(
-        user_id=user_id, organization_id=org_id, role=role
+        user_id=user_id, organization_id=org_id, role=role,
+        features=None if features is None else frozenset(features),
     )
     # Routes that also accept API tokens (get_config_auth) resolve identity from
     # the introspection result rather than get_current_auth.
     app.dependency_overrides[get_introspection] = lambda: IntrospectResult(
-        active=True, user_id=user_id, organization_id=org_id, role=str(role)
+        active=True, user_id=user_id, organization_id=org_id, role=str(role), features=features
     )
 
 

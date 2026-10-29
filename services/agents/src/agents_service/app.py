@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+from common.enums import Feature
 from common.errors import register_exception_handlers
 from common.responses import success_response
 from common.schemas import SuccessResponse
@@ -10,10 +11,10 @@ from agents_service.actions.router import router as actions_router
 from agents_service.agent_assignments.router import router as agent_assignments_router
 from agents_service.agent_details.router import router as agent_details_router
 from agents_service.agent_templates.router import router as agent_templates_router
-from agents_service.agents.router import router as agents_router
+from agents_service.agents.router import agent_config_router, router as agents_router
 from agents_service.analytics.router import router as analytics_router
 from agents_service.core.config import get_settings
-from agents_service.core.deps import bind_write_environment
+from agents_service.core.deps import bind_write_environment, require_feature
 from agents_service.core.http_client import close_http_client
 from agents_service.db.mongodb import close_db, get_client, init_db
 from agents_service.deployment.router import router as deployment_router
@@ -30,6 +31,7 @@ from agents_service.prompt.router import router as prompt_router
 from agents_service.providers.router import router as providers_router
 from agents_service.transcriber.router import router as transcriber_router
 from agents_service.voice_persona.router import router as voice_persona_router
+from agents_service.whatsapp.router import router as whatsapp_router, status_router as whatsapp_status_router
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
@@ -84,6 +86,7 @@ TAGS_METADATA = [
     {"name": "agents:actions", "description": "Custom actions/functions the agent can invoke during a call."},
     {"name": "agents:mcp", "description": "Model Context Protocol server integrations available to the agent."},
     {"name": "agents:assignments", "description": "Assigning agents to users/teams."},
+    {"name": "whatsapp", "description": "WhatsApp Business messaging via Twilio: agents, templates + approval, CSV contacts, sending and delivery status."},
     {"name": "providers", "description": "Read-only registry of available LLM/STT/TTS providers and models."},
 ]
 
@@ -103,7 +106,6 @@ def create_app() -> FastAPI:
         description=API_DESCRIPTION,
         openapi_tags=TAGS_METADATA,
         lifespan=lifespan,
-        dependencies=[Depends(bind_write_environment)],
     )
     register_exception_handlers(app)
 
@@ -112,26 +114,36 @@ def create_app() -> FastAPI:
     # publish/clone); every tab's own router owns its PATCH .../{section} route
     # (and, for prompt, the /test render endpoint) — see agents/model.py's
     # docstring for why the split follows the agent-builder's tabs.
-    app.include_router(agent_templates_router, prefix=api_v1)
-    app.include_router(agents_router, prefix=api_v1)
-    app.include_router(agent_assignments_router, prefix=api_v1)
-    app.include_router(agent_details_router, prefix=api_v1)
-    app.include_router(languages_router, prefix=api_v1)
-    app.include_router(precall_variables_router, prefix=api_v1)
-    app.include_router(prompt_router, prefix=api_v1)
-    app.include_router(flow_router, prefix=api_v1)
-    app.include_router(transcriber_router, prefix=api_v1)
-    app.include_router(llm_router, prefix=api_v1)
-    app.include_router(voice_persona_router, prefix=api_v1)
-    app.include_router(analytics_router, prefix=api_v1)
-    app.include_router(others_router, prefix=api_v1)
-    app.include_router(faq_router, prefix=api_v1)
-    app.include_router(deployment_router, prefix=api_v1)
-    app.include_router(dynamic_message_router, prefix=api_v1)
-    app.include_router(post_call_trigger_router, prefix=api_v1)
-    app.include_router(actions_router, prefix=api_v1)
-    app.include_router(mcp_router, prefix=api_v1)
-    app.include_router(providers_router, prefix=api_v1)
+    # Every router binds `?env=` (which environment edit routes write to) except
+    # the config router: GET /agents/config has its own `environment` param.
+    write_env = [Depends(bind_write_environment)]
+    # Everything below except WhatsApp/SMS is the Voice Agents product, which a Super Admin
+    # can switch off per organization (WhatsApp and SMS are checked per agent channel).
+    voice = [Depends(require_feature(Feature.VOICE_AGENTS))]
+    voice_env = write_env + voice
+    app.include_router(agent_config_router, prefix=api_v1, dependencies=voice)
+    app.include_router(agent_templates_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(agents_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(agent_assignments_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(agent_details_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(languages_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(precall_variables_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(prompt_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(flow_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(transcriber_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(llm_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(voice_persona_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(analytics_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(others_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(faq_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(deployment_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(dynamic_message_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(post_call_trigger_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(actions_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(mcp_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(providers_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(whatsapp_router, prefix=api_v1)
+    app.include_router(whatsapp_status_router, prefix=api_v1)
 
     @app.get(
         "/health",

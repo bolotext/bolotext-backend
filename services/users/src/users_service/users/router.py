@@ -1,4 +1,7 @@
+import math
+
 from beanie import PydanticObjectId
+from common.enums import ALL_FEATURES
 from common.responses import success_response
 from common.schemas import SuccessResponse
 from fastapi import APIRouter, Depends, Path, Query
@@ -7,7 +10,8 @@ from users_service.core.deps import AuthContext, get_current_auth, require_permi
 from users_service.enums import UserStatus
 from users_service.memberships import service as membership_service
 from users_service.memberships.model import OrganizationMembership
-from users_service.memberships.schema import MyOrganizationOut
+from users_service.memberships.schema import MyOrganizationOut, MyOrganizationsResponse, PageInfo
+from users_service.organizations import repository as organization_repo
 from users_service.users import service as user_service
 from users_service.users.model import User
 from users_service.users.schema import UserCreate, UserOut, UserSelfUpdate, UserUpdate
@@ -45,22 +49,37 @@ async def get_me(auth: AuthContext = Depends(get_current_auth)) -> dict:
     **Errors:**
     - `UNAUTHORIZED` — missing/invalid/expired access token.
     """
+    # Super Admin: has no membership, but if they switched into an org, report
+    # it (role stays SUPER_ADMIN) so clients can show the active organization.
     membership = None
-    if not auth.is_super_admin:
+    organization_name = None
+    org = None
+    if auth.organization_id is not None:
         membership = OrganizationMembership(
             user_id=auth.user_id, organization_id=auth.organization_id, role=auth.role
         )
-    return success_response(data=_to_out(auth.user, membership))
+        org = await organization_repo.get_by_id(auth.organization_id)
+        organization_name = org.name if org else None
+    out = _to_out(auth.user, membership)
+    out.organization_name = organization_name
+    # Super Admins always see every product area; members see what their org was granted.
+    out.features = list(ALL_FEATURES) if auth.user.is_super_admin or org is None else [str(f) for f in org.features]
+    return success_response(data=out)
 
 
 @router.get(
     "/me/organizations",
-    response_model=SuccessResponse[list[MyOrganizationOut]],
-    summary="List organizations the caller belongs to",
+    response_model=MyOrganizationsResponse,
+    summary="List organizations the caller can switch into",
 )
-async def get_my_organizations(auth: AuthContext = Depends(get_current_auth)) -> dict:
+async def get_my_organizations(
+    page: int = Query(1, ge=1, description="1-based page number."),
+    limit: int = Query(10, ge=1, le=100, description="Organizations per page."),
+    auth: AuthContext = Depends(get_current_auth),
+) -> dict:
     """Lists every organization the currently authenticated user is a
-    member of, with their role in each. Useful for building an organization
+    member of, with their role in each, paginated. A Super Admin gets every
+    organization (role `SUPER_ADMIN`). Useful for building an organization
     switcher before calling `POST /auth/switch-organization`.
 
     **Auth:** Bearer access token required (any authenticated user).
@@ -68,13 +87,15 @@ async def get_my_organizations(auth: AuthContext = Depends(get_current_auth)) ->
     **Errors:**
     - `UNAUTHORIZED` — missing/invalid/expired access token.
     """
-    memberships = await membership_service.list_my_memberships(auth)
-    return success_response(
+    memberships, total = await membership_service.list_my_memberships(auth, page=page, limit=limit)
+    response = success_response(
         data=[
             MyOrganizationOut(organization_id=str(org.id), name=org.name, slug=org.slug, role=role)
             for org, role in memberships
         ]
     )
+    response["pagination"] = PageInfo(total=total, page=page, limit=limit, total_pages=math.ceil(total / limit))
+    return response
 
 
 @router.patch(

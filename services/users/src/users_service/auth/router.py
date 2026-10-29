@@ -19,10 +19,11 @@ from users_service.auth.schema import (
     TokenResponse,
 )
 from users_service.core.config import get_settings
-from users_service.core.deps import AuthContext, get_current_auth
+from users_service.core.deps import AuthContext, get_current_auth, resolve_super_admin_org
 from users_service.core.rate_limit import limiter
 from users_service.enums import UserStatus
 from users_service.memberships import repository as membership_repo
+from users_service.organizations import repository as organization_repo
 from users_service.users import repository as user_repo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -158,6 +159,7 @@ class IntrospectResponse(BaseModel):
     token_type: str = Field(default="user", description='`"user"` for a user access token, `"api_token"` for a Super-Admin-issued API token.')
     scopes: list[str] = Field(default_factory=list, description="What an API token may do (e.g. `agent-config:read`). Empty for user tokens.")
     token_id: str | None = Field(default=None, description="The API token's id. `null` for user tokens.")
+    features: list[str] | None = Field(default=None, description="Product areas the token's organization may use, re-read on every call. `null` = unrestricted (Super Admins, API tokens).")
 
 
 @internal_router.post(
@@ -225,8 +227,15 @@ async def introspect(
         return success_response(data=IntrospectResponse(active=False))
 
     if user.is_super_admin:
+        # Carry the organization the Super Admin switched into, if it still exists.
+        switched_org = await resolve_super_admin_org(claims.get("organization_id"))
         return success_response(
-            data=IntrospectResponse(active=True, user_id=user_id, organization_id=None, role="SUPER_ADMIN")
+            data=IntrospectResponse(
+                active=True,
+                user_id=user_id,
+                organization_id=str(switched_org) if switched_org else None,
+                role="SUPER_ADMIN",
+            )
         )
 
     organization_id = claims.get("organization_id")
@@ -239,6 +248,10 @@ async def introspect(
     if membership is None:
         return success_response(data=IntrospectResponse(active=False))
 
+    org = await organization_repo.get_by_id(PydanticObjectId(organization_id))
     return success_response(
-        data=IntrospectResponse(active=True, user_id=user_id, organization_id=organization_id, role=str(membership.role))
+        data=IntrospectResponse(
+            active=True, user_id=user_id, organization_id=organization_id, role=str(membership.role),
+            features=[str(f) for f in org.features] if org else None,
+        )
     )

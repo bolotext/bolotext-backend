@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from common.enums import ALL_FEATURES, Feature
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from users_service.enums import OrganizationStatus
@@ -25,11 +26,19 @@ class OrganizationCreate(BaseModel):
         default=None, description="Email for the org's first Admin user, if bootstrapping one now."
     )
     admin_full_name: str | None = Field(default=None, description="Full name for the bootstrapped Admin user.")
+    features: list[Feature] = Field(
+        default_factory=lambda: [Feature(f) for f in ALL_FEATURES],
+        min_length=1,
+        description="Product areas the organization may use: `voice_agents`, `whatsapp`, `sms`. At least one.",
+    )
 
 
 class OrganizationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200, description="New display name, if changing it.")
     status: OrganizationStatus | None = Field(default=None, description="New lifecycle status, if changing it.")
+    features: list[Feature] | None = Field(
+        default=None, min_length=1, description="Replace the product areas the organization may use, if changing them."
+    )
 
 
 class OrganizationOut(BaseModel):
@@ -37,6 +46,7 @@ class OrganizationOut(BaseModel):
     name: str = Field(description="The organization's display name.")
     slug: str = Field(description="The organization's unique slug.")
     status: OrganizationStatus = Field(description="Current lifecycle status.")
+    features: list[Feature] = Field(description="Product areas this organization may use.")
     created_by: str = Field(description="Id of the user who created this organization.")
     created_at: datetime
     updated_at: datetime

@@ -25,7 +25,7 @@ owns it (see the Users and Agents services' own `/docs`).
 `GET /health` is the only endpoint implemented directly by the gateway
 itself; everything else under `/api/v1` is proxied. Currently proxied first
 path segments: `auth`, `organizations`, `users`, `api-tokens`, `internal` (Users service),
-and `agents`, `providers`, `agent-templates` (Agents service) — see `_route_map` below.
+and `agents`, `providers`, `agent-templates`, `languages`, `whatsapp` (Agents service) — see `_route_map` below.
 """
 
 
@@ -40,6 +40,8 @@ def _route_map() -> dict[str, str | None]:
         "agents": settings.agents_service_url,  # None until that service exists
         "providers": settings.agents_service_url,  # agents_service.providers — LLM/STT/TTS provider+model registry
         "agent-templates": settings.agents_service_url,  # agents_service.agent_templates — starter agent templates
+        "languages": settings.agents_service_url,  # agents_service.languages — languages offered when creating an agent
+        "whatsapp": settings.agents_service_url,  # agents_service.whatsapp — WhatsApp Business messaging (Twilio)
     }
 
 

@@ -4,6 +4,7 @@ from common.enums import Role
 
 from users_service.memberships.model import OrganizationMembership
 from tests.factories import auth_header, code, data, make_org, make_user
+from users_service.core.config import get_settings
 
 pytestmark = pytest.mark.asyncio
 
@@ -131,3 +132,37 @@ async def test_login_defaults_to_last_used_organization(client):
     token = data(resp)["access_token"]
     me = await client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"})
     assert data(me)["organization_id"] == str(org_b.id)
+
+
+async def test_super_admin_switch_organization_sticks(client):
+    org = await make_org("Switch Target", "switch-target")
+    super_admin = await make_user(None, Role.SUPER_ADMIN, "sa-switch@example.com")
+
+    resp = await client.post(
+        "/api/v1/auth/switch-organization",
+        headers=auth_header(super_admin),
+        json={"organization_id": str(org.id)},
+    )
+    assert code(resp) == 200
+    token = data(resp)["access_token"]
+
+    resp = await client.post(
+        "/api/v1/internal/introspect",
+        headers={"X-Internal-Api-Key": get_settings().internal_api_key},
+        json={"access_token": token},
+    )
+    assert data(resp)["organization_id"] == str(org.id)
+    assert data(resp)["role"] == "SUPER_ADMIN"
+
+
+async def test_super_admin_me_reports_active_organization(client):
+    org = await make_org("Active Org", "active-org")
+    super_admin = await make_user(None, Role.SUPER_ADMIN, "sa-me@example.com")
+
+    me = data(await client.get("/api/v1/users/me", headers=auth_header(super_admin)))
+    assert me["organization_id"] is None and me["organization_name"] is None
+
+    me = data(await client.get("/api/v1/users/me", headers=auth_header(super_admin, org.id)))
+    assert me["organization_id"] == str(org.id)
+    assert me["organization_name"] == "Active Org"
+    assert me["role"] == "SUPER_ADMIN"

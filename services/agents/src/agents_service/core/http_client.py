@@ -41,6 +41,8 @@ class IntrospectResult(BaseModel):
     token_type: str = "user"
     scopes: list[str] = []
     token_id: str | None = None
+    # Product areas the caller's organization may use; None = unrestricted.
+    features: list[str] | None = None
 
 
 async def introspect(access_token: str) -> IntrospectResult:

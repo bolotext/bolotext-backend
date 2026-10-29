@@ -76,8 +76,21 @@ async def remove_membership(auth: AuthContext, organization_id: PydanticObjectId
     await membership_repo.delete(membership)
 
 
-async def list_my_memberships(auth: AuthContext) -> list[tuple[Organization, Role]]:
+async def list_my_memberships(
+    auth: AuthContext, page: int = 1, limit: int = 10
+) -> tuple[list[tuple[Organization, Role]], int]:
+    """Returns (this page of (org, role) pairs, total count). A Super Admin
+    has no memberships and can enter any organization, so they get every
+    organization (role SUPER_ADMIN) instead."""
+    skip = (page - 1) * limit
+    if auth.is_super_admin:
+        total = await organization_repo.count_organizations()
+        orgs = await organization_repo.list_organizations(skip=skip, limit=limit)
+        return [(o, Role.SUPER_ADMIN) for o in orgs], total
+
     memberships = await membership_repo.list_for_user(auth.user_id)
     orgs = await organization_repo.get_many_by_ids([m.organization_id for m in memberships])
     orgs_by_id = {o.id: o for o in orgs}
-    return [(orgs_by_id[m.organization_id], m.role) for m in memberships if m.organization_id in orgs_by_id]
+    pairs = [(orgs_by_id[m.organization_id], m.role) for m in memberships if m.organization_id in orgs_by_id]
+    pairs.sort(key=lambda p: (p[0].name, str(p[0].id)))
+    return pairs[skip : skip + limit], len(pairs)

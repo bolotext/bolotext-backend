@@ -152,3 +152,19 @@ async def test_create_user_with_existing_email_adds_membership_in_other_org(clie
         json={"email": "shared@example.com", "full_name": "Shared", "role": "QA"},
     )
     assert code(again) == 409
+
+
+async def test_super_admin_my_organizations_lists_all_paginated(client):
+    for i in range(12):
+        await make_org(f"Page Org {i:02d}", f"page-org-{i:02d}")
+    super_admin = await make_user(None, Role.SUPER_ADMIN, "sa-pages@example.com")
+
+    resp = await client.get("/api/v1/users/me/organizations", headers=auth_header(super_admin))
+    page1, info = data(resp), resp.json()["pagination"]
+    assert info == {"total": 12, "page": 1, "limit": 10, "total_pages": 2} and len(page1) == 10
+    assert all(o["role"] == "SUPER_ADMIN" for o in page1)
+
+    resp = await client.get("/api/v1/users/me/organizations?page=2", headers=auth_header(super_admin))
+    page2 = data(resp)
+    assert len(page2) == 2
+    assert not {o["organization_id"] for o in page1} & {o["organization_id"] for o in page2}

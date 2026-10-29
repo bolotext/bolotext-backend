@@ -32,10 +32,10 @@ class TranscriberSettings(BaseModel):
     # agent can default-construct this section — see agents/service.py.
     provider_id: str = Field("deepgram", description="STT provider id, e.g. `gnani`. See GET /providers/stt for valid values.")
     model_id: str | None = Field("nova-3", description="STT model id offered by `provider_id`, e.g. `gnani-stt-v2`.")
-    language: str = Field("en", description="Language code the transcriber listens for, e.g. `en-IN`. Must be one of the chosen model's `supported_languages[].code` in GET /providers/stt.")
+    language: str = Field("multi", description="Language code the transcriber listens for, e.g. `en-IN`. Must be one of the chosen model's `supported_languages[].code` in GET /providers/stt.")
     #tier: str | None = Field(None, description="Provider-specific quality/cost tier for the model, e.g. `balanced`.")
     allow_interruptions: bool = Field(True, description="Whether the caller can interrupt (barge in on) the agent while it's speaking.")
-    min_time_to_barge: float = Field(1.2, description="Minimum seconds the agent must be speaking before a barge-in interruption is honored.")
+    min_time_to_barge: float = Field(1.0, description="Minimum seconds the agent must be speaking before a barge-in interruption is honored.")
     background_noise_filtering: bool = Field(True, description="Whether background noise is filtered out before transcription.")
     noise_suppression_level: int = Field(80, description="Aggressiveness of noise suppression, 0-100 (higher suppresses more).")
     inverse_text_normalization: bool = Field(False, description="Whether spoken forms are converted to written forms in the transcript, e.g. \"twenty\" to \"20\".")

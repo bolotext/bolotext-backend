@@ -2,7 +2,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
-from common.enums import Role
+from common.enums import Feature, Role
 from common.errors import ForbiddenError, UnauthorizedError
 from common.log_utils import setup_logger
 from fastapi import Depends, Query
@@ -35,10 +35,40 @@ class AuthContext:
     user_id: str
     organization_id: str | None
     role: Role
+    # Product areas the caller's organization may use; None = unrestricted (Super Admin).
+    features: frozenset[str] | None = None
 
     @property
     def is_super_admin(self) -> bool:
         return self.role == Role.SUPER_ADMIN
+
+    def has_feature(self, feature: Feature | str) -> bool:
+        return self.features is None or str(feature) in self.features
+
+    def require_feature(self, feature: Feature | str) -> None:
+        if not self.has_feature(feature):
+            raise ForbiddenError(f"Your organization doesn't have access to {_FEATURE_NAMES.get(str(feature), str(feature))}")
+
+
+_FEATURE_NAMES = {
+    Feature.VOICE_AGENTS: "Voice Agents",
+    Feature.WHATSAPP: "WhatsApp Messaging",
+    Feature.SMS: "Send an SMS",
+}
+
+
+def require_feature(feature: Feature):
+    """Router-level guard: users of an organization without `feature` get FORBIDDEN.
+    Super Admins and API tokens pass; other auth failures are left to the route's own auth.
+    """
+
+    async def dependency(result: IntrospectResult = Depends(get_introspection)) -> None:
+        if not result.active or result.token_type != "user" or result.role == Role.SUPER_ADMIN:
+            return
+        if result.features is not None and str(feature) not in result.features:
+            raise ForbiddenError(f"Your organization doesn't have access to {_FEATURE_NAMES[feature]}")
+
+    return dependency
 
 
 AGENT_CONFIG_READ = "agent-config:read"
@@ -71,7 +101,9 @@ async def get_current_auth(result: IntrospectResult = Depends(get_introspection)
     if not result.user_id or not result.role:
         raise UnauthorizedError("Invalid or expired access token")
 
-    return AuthContext(user_id=result.user_id, organization_id=result.organization_id, role=Role(result.role))
+    role = Role(result.role)
+    features = None if role == Role.SUPER_ADMIN or result.features is None else frozenset(result.features)
+    return AuthContext(user_id=result.user_id, organization_id=result.organization_id, role=role, features=features)
 
 
 async def get_config_auth(result: IntrospectResult = Depends(get_introspection)) -> AuthContext | ServiceAuth:

@@ -49,6 +49,14 @@ class UserOut(BaseModel):
         description="The organization this response's membership/role is scoped to. `null` for a "
         "Super Admin or a listing with no single resolvable organization context."
     )
+    organization_name: str | None = Field(
+        default=None, description="Display name of `organization_id`. Only populated by `GET /users/me`."
+    )
+    features: list[str] | None = Field(
+        default=None,
+        description="Product areas this user may use (`voice_agents`, `whatsapp`, `sms`). Only populated by `GET /users/me`; "
+        "all of them for a Super Admin.",
+    )
     email: EmailStr = Field(description="The user's email address.")
     full_name: str = Field(description="The user's display name.")
     role: Role | None = Field(description="The user's role within `organization_id`. `null` when `organization_id` is null.")
