@@ -1,29 +1,35 @@
 import argparse
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-import uvicorn
-from common.errors import register_exception_handlers
-from common.responses import success_response
-from common.schemas import SuccessResponse
-from fastapi import FastAPI
-from starlette.datastructures import Headers
-from starlette.types import ASGIApp, Receive, Scope, Send
+# Hosts that import this file by path (e.g. Vercel) don't put src/ on sys.path,
+# so the sibling packages (common, users_service, agents_service) wouldn't resolve.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from agents_service.app import API_DESCRIPTION as AGENTS_DESCRIPTION
-from agents_service.app import TAGS_METADATA as AGENTS_TAGS
-from agents_service.app import register_routes as register_agents_routes
-from agents_service.db.mongodb import close_db as close_agents_db
-from agents_service.db.mongodb import get_client as get_agents_client
-from agents_service.db.mongodb import init_db as init_agents_db
-from config import get_settings
-from users_service.app import API_DESCRIPTION as USERS_DESCRIPTION
-from users_service.app import TAGS_METADATA as USERS_TAGS
-from users_service.app import register_routes as register_users_routes
-from users_service.db.mongodb import close_db as close_users_db
-from users_service.db.mongodb import get_client as get_users_client
-from users_service.db.mongodb import init_db as init_users_db
+import uvicorn  # noqa: E402
+from common.errors import register_exception_handlers  # noqa: E402
+from common.responses import success_response  # noqa: E402
+from common.schemas import SuccessResponse  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from starlette.datastructures import Headers  # noqa: E402
+from starlette.types import ASGIApp, Receive, Scope, Send  # noqa: E402
+
+from agents_service.app import API_DESCRIPTION as AGENTS_DESCRIPTION  # noqa: E402
+from agents_service.app import TAGS_METADATA as AGENTS_TAGS  # noqa: E402
+from agents_service.app import register_routes as register_agents_routes  # noqa: E402
+from agents_service.db.mongodb import close_db as close_agents_db  # noqa: E402
+from agents_service.db.mongodb import get_client as get_agents_client  # noqa: E402
+from agents_service.db.mongodb import init_db as init_agents_db  # noqa: E402
+from config import get_settings  # noqa: E402
+from users_service.app import API_DESCRIPTION as USERS_DESCRIPTION  # noqa: E402
+from users_service.app import TAGS_METADATA as USERS_TAGS  # noqa: E402
+from users_service.app import register_routes as register_users_routes  # noqa: E402
+from users_service.db.mongodb import close_db as close_users_db  # noqa: E402
+from users_service.db.mongodb import get_client as get_users_client  # noqa: E402
+from users_service.db.mongodb import init_db as init_users_db  # noqa: E402
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
