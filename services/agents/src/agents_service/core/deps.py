@@ -72,6 +72,7 @@ def require_feature(feature: Feature):
 
 
 AGENT_CONFIG_READ = "agent-config:read"
+CALL_LOG_WRITE = "call-log:write"
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,17 @@ async def get_current_auth(result: IntrospectResult = Depends(get_introspection)
     role = Role(result.role)
     features = None if role == Role.SUPER_ADMIN or result.features is None else frozenset(result.features)
     return AuthContext(user_id=result.user_id, organization_id=result.organization_id, role=role, features=features)
+
+
+async def get_call_log_writer(result: IntrospectResult = Depends(get_introspection)) -> ServiceAuth:
+    """For the voice runtime's call-log upload: only an API token with `call-log:write`."""
+    if not result.active:
+        raise UnauthorizedError("Invalid or expired token")
+    if result.token_type != "api_token":
+        raise UnauthorizedError("Call logs are uploaded with an API token, not a user token")
+    if CALL_LOG_WRITE not in result.scopes:
+        raise ForbiddenError("This API token can't write call logs (it needs the call-log:write scope)")
+    return ServiceAuth(token_id=result.token_id or "", scopes=frozenset(result.scopes))
 
 
 async def get_config_auth(result: IntrospectResult = Depends(get_introspection)) -> AuthContext | ServiceAuth:

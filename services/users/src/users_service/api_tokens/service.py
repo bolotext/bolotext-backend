@@ -6,7 +6,7 @@ from common.errors import NotFoundError
 
 from users_service.api_tokens import repository as repo
 from users_service.api_tokens.model import ApiToken
-from users_service.api_tokens.schema import AGENT_CONFIG_READ, ApiTokenCreated, ApiTokenOut
+from users_service.api_tokens.schema import AGENT_CONFIG_READ, CALL_LOG_WRITE, ApiTokenCreated, ApiTokenOut
 
 # Every API token starts with this, so the introspect endpoint can tell one
 # apart from a user JWT without trying to decode it.
@@ -38,7 +38,7 @@ async def create_token(name: str, created_by: PydanticObjectId) -> ApiTokenCreat
         name=name.strip(),
         token_prefix=token[:10],
         token_hash=hash_token(token),
-        scopes=[AGENT_CONFIG_READ],
+        scopes=[AGENT_CONFIG_READ, CALL_LOG_WRITE],
         created_by=created_by,
     )
     return ApiTokenCreated(**to_out(record).model_dump(), token=token)

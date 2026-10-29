@@ -10,6 +10,7 @@ from agents_service.agent_configs.model import AgentConfig, Environment
 from agents_service.agent_details.schema import AgentDetails, AgentDetailsUpdate
 from agents_service.agents import repository as agent_repo
 from agents_service.agents.model import Agent, AgentStatus
+from agents_service.call_logs.model import CallLog
 from agents_service.agents.schema import SECTIONS, AgentIdentitySummary, AgentListItem, AgentOut, EnvironmentSummary
 from agents_service.core.deps import AuthContext, write_environment
 from agents_service.dynamic_message.schema import DynamicMessageSettingsUpdate
@@ -405,6 +406,7 @@ async def delete_agent(agent_id: PydanticObjectId, auth: AuthContext) -> tuple[A
     await config_repo.delete_all_by_agent_id(agent.id)
     await prompt_service.delete_all_system_prompt_versions(agent.id)
     await assignment_repo.delete_all_by_agent_id(agent.id)
+    await CallLog.find(CallLog.agent_id == str(agent.id)).delete()  # transcripts go with the agent
     await agent_repo.delete(agent)
     logger.info(f"agent deleted: agent_id={agent.id} user_id={auth.user_id}")
     return agent, config

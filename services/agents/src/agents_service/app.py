@@ -12,6 +12,7 @@ from agents_service.agent_assignments.router import router as agent_assignments_
 from agents_service.agent_details.router import router as agent_details_router
 from agents_service.agent_templates.router import router as agent_templates_router
 from agents_service.agents.router import agent_config_router, router as agents_router
+from agents_service.call_logs.router import router as call_logs_router
 from agents_service.analytics.router import router as analytics_router
 from agents_service.core.config import get_settings
 from agents_service.core.deps import bind_write_environment, require_feature
@@ -69,6 +70,7 @@ TAGS_METADATA = [
         "description": "Whole-agent lifecycle: create, list, get, delete, status, "
         "environments, and promotion between environments.",
     },
+    {"name": "call-logs", "description": "Finished-call logs posted by the voice runtime, and their per-agent history."},
     {"name": "agents:agent-details", "description": "Identity/basics section of the agent builder (name, description, region, timezone, bot type)."},
     {"name": "agents:languages", "description": "Configured languages for an agent."},
     {"name": "agents:precall-variables", "description": "Variables resolved before a call starts and made available to the prompt/flow."},
@@ -122,6 +124,7 @@ def create_app() -> FastAPI:
     voice = [Depends(require_feature(Feature.VOICE_AGENTS))]
     voice_env = write_env + voice
     app.include_router(agent_config_router, prefix=api_v1, dependencies=voice)
+    app.include_router(call_logs_router, prefix=api_v1, dependencies=voice)
     app.include_router(agent_templates_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(agents_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(agent_assignments_router, prefix=api_v1, dependencies=voice_env)

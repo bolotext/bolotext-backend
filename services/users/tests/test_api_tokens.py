@@ -24,14 +24,14 @@ async def test_super_admin_creates_lists_and_revokes(client):
     assert code(created) == 201
     body = data(created)
     token = body["token"]
-    assert token.startswith("bt_") and body["scopes"] == ["agent-config:read"]
+    assert token.startswith("bt_") and body["scopes"] == ["agent-config:read", "call-log:write"]
 
     listed = data(await client.get("/api/v1/api-tokens", headers=h))
     assert [t["id"] for t in listed] == [body["id"]]
     assert "token" not in listed[0] and listed[0]["token_prefix"] == token[:10]
 
     live = await _introspect(client, token)
-    assert live["active"] is True and live["token_type"] == "api_token" and live["scopes"] == ["agent-config:read"]
+    assert live["active"] is True and live["token_type"] == "api_token" and live["scopes"] == ["agent-config:read", "call-log:write"]
 
     revoked = await client.delete(f"/api/v1/api-tokens/{body['id']}", headers=h)
     assert code(revoked) == 200 and data(revoked)["revoked"] is True
@@ -52,3 +52,22 @@ async def test_unknown_or_forged_tokens_are_inactive(client):
     assert (await _introspect(client, "bt_not-a-real-token"))["active"] is False
     admin = await make_user(None, Role.SUPER_ADMIN, "tok-super2@example.com")
     assert code(await client.delete("/api/v1/api-tokens/000000000000000000000000", headers=auth_header(admin))) == 404
+
+
+async def test_existing_tokens_get_the_call_log_scope_without_touching_revoked_ones():
+    from beanie import PydanticObjectId
+
+    from users_service.api_tokens.model import ApiToken
+    from users_service.db.mongodb import grant_call_log_scope
+
+    old = ApiToken(name="old", token_prefix="bt_old", token_hash="h1", scopes=["agent-config:read"], created_by=PydanticObjectId())
+    revoked = ApiToken(name="gone", token_prefix="bt_gone", token_hash="h2", scopes=["agent-config:read"], created_by=PydanticObjectId(), revoked=True)
+    new = ApiToken(name="new", token_prefix="bt_new", token_hash="h3", scopes=["agent-config:read", "call-log:write"], created_by=PydanticObjectId())
+    for t in (old, revoked, new):
+        await t.insert()
+
+    assert await grant_call_log_scope() == 1
+    assert (await ApiToken.get(old.id)).scopes == ["agent-config:read", "call-log:write"]
+    assert (await ApiToken.get(revoked.id)).scopes == ["agent-config:read"]
+    assert (await ApiToken.get(new.id)).scopes == ["agent-config:read", "call-log:write"]
+    assert await grant_call_log_scope() == 0  # idempotent

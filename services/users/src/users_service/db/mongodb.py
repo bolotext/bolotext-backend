@@ -49,6 +49,21 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
             RolePermissionMapping,
         ],
     )
+    await grant_call_log_scope()
+
+
+async def grant_call_log_scope() -> int:
+    """Tokens issued before call logs existed only carry `agent-config:read`. They
+    are the voice runtime's token, which now also uploads call logs, so give every
+    live one `call-log:write` (idempotent; revoked tokens are left alone).
+    """
+    from users_service.api_tokens.schema import AGENT_CONFIG_READ, CALL_LOG_WRITE
+
+    query = {"revoked": False, "scopes": {"$all": [AGENT_CONFIG_READ], "$ne": CALL_LOG_WRITE}}
+    n = await ApiToken.find(query).count()
+    if n:
+        await ApiToken.find(query).update({"$addToSet": {"scopes": CALL_LOG_WRITE}})
+    return n
 
 
 async def close_db() -> None:

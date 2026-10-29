@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from agents_service.agent_assignments.model import AgentAssignment
 from agents_service.agent_configs.model import AgentConfig
 from agents_service.agents.model import Agent
+from agents_service.call_logs.model import CallLog
 from agents_service.core.config import get_settings
 from agents_service.prompt.version_model import SystemPromptVersion
 from agents_service.whatsapp.model import (
@@ -48,6 +49,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
             AgentConfig,
             SystemPromptVersion,
             AgentAssignment,
+            CallLog,
             WhatsAppAgent,
             WhatsAppTemplate,
             WhatsAppBatch,
