@@ -1,59 +1,16 @@
 services:
-  users:
+  backend:
     build:
       context: .
-      dockerfile: services/users/Dockerfile
-    container_name: bolotext_users
-    env_file:
-      - services/users/.env
-    environment:
-      # Compose's `environment:` overrides `env_file:`, so this always wins
-      # even if the local .env (also used for `uv run` dev) says otherwise —
-      # this stack is never allowed to run with --reload.
-      ENVIRONMENT: production
-      WORKERS: ${WORKERS:-4}
-    networks:
-      - bolotext-network
-    restart: always
-
-  api-gateway:
-    build:
-      context: .
-      dockerfile: services/api-gateway/Dockerfile
-    container_name: bolotext_api_gateway
+      dockerfile: Dockerfile
+    container_name: bolotext_backend
     ports:
-      - 8000:8000
+      - 7860:7860
     env_file:
-      - services/api-gateway/.env
+      - .env
     environment:
-      USERS_SERVICE_URL: http://users:8001
-      AGENTS_SERVICE_URL: http://agents:8002
+      # Compose's `environment:` overrides `env_file:`, so this stack never
+      # runs with --reload even if the local .env says development.
       ENVIRONMENT: production
-      WORKERS: ${WORKERS:-4}
-    depends_on:
-      - users
-      - agents
-    networks:
-      - bolotext-network
+      WORKERS: ${WORKERS:-1}
     restart: always
-
-  agents:
-    build:
-      context: .
-      dockerfile: services/agents/Dockerfile
-    container_name: bolotext_agents
-    env_file:
-      - services/agents/.env
-    environment:
-      USERS_SERVICE_URL: http://users:8001
-      ENVIRONMENT: production
-      WORKERS: ${WORKERS:-4}
-    depends_on:
-      - users
-    networks:
-      - bolotext-network
-    restart: always
-
-networks:
-  bolotext-network:
-    driver: bridge
