@@ -94,7 +94,7 @@ TAGS_METADATA = [
     {"name": "agents:mcp", "description": "Model Context Protocol server integrations available to the agent."},
     {"name": "agents:assignments", "description": "Assigning agents to users/teams."},
     {"name": "agents:telephony", "description": "Connect an agent to a SIP provider via LiveKit trunks."},
-    {"name": "admin:telephony", "description": "Super Admin: manage every SIP trunk and dispatch rule in LiveKit."},
+    {"name": "admin:telephony", "description": "Manage SIP trunks and dispatch rules: all of them for a Super Admin, your own organization's for an Admin."},
     {"name": "usage", "description": "An organization Admin's own usage and cost."},
     {"name": "admin:usage", "description": "Super Admin dashboard: STT/LLM/TTS usage and cost per organization and agent."},
     {"name": "agents:web-call", "description": "LiveKit tokens for browser voice calls (builder test calls and the embeddable widget)."},
@@ -149,7 +149,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(usage_router, prefix=api_v1)
     app.include_router(usage_org_router, prefix=api_v1, dependencies=voice)
     app.include_router(telephony_router, prefix=api_v1, dependencies=voice)
-    app.include_router(telephony_admin_router, prefix=api_v1)
+    app.include_router(telephony_admin_router, prefix=api_v1, dependencies=voice)
     app.include_router(web_call_router, prefix=api_v1, dependencies=voice)
     app.include_router(web_call_public_router, prefix=api_v1)
     app.include_router(whatsapp_router, prefix=api_v1)

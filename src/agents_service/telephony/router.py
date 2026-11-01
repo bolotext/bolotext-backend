@@ -1,6 +1,8 @@
 from typing import Literal
 
 from beanie import PydanticObjectId
+from common.enums import Role
+from common.errors import ForbiddenError
 from common.responses import success_response
 from common.schemas import SuccessResponse
 from fastapi import APIRouter, Depends, Path
@@ -21,12 +23,18 @@ from agents_service.telephony.schema import (
     TrunkUpdate,
     UseTrunk,
 )
-from agents_service.usage.router import require_super_admin
 
 router = APIRouter(prefix="/agents", tags=["agents:telephony"])
 admin_router = APIRouter(prefix="/admin/telephony", tags=["admin:telephony"])
 
 _AGENT_ID = Path(description="The agent's id.")
+
+
+async def require_telephony_manager(auth: AuthContext = Depends(get_current_auth)) -> AuthContext:
+    """Super Admins manage every trunk; an organization's Admin manages only that organization's."""
+    if auth.is_super_admin or (auth.role == Role.ADMIN and auth.organization_id):
+        return auth
+    raise ForbiddenError("Only an organization Admin or a Super Admin can manage telephony trunks")
 
 
 @router.get("/{agent_id}/telephony", response_model=SuccessResponse[TelephonyOut], summary="An agent's telephony connection")
@@ -103,38 +111,41 @@ async def telephony_call(payload: TelephonyCall, agent_id: PydanticObjectId = _A
 # ------------------------------------------------------------ Super Admin CRUD
 
 
-@admin_router.get("/trunks", response_model=SuccessResponse[TrunkList], summary="All SIP trunks and dispatch rules in LiveKit")
-async def list_trunks(_: AuthContext = Depends(require_super_admin)) -> dict:
-    """Outbound trunks, inbound trunks and dispatch rules of the whole LiveKit project (passwords are never returned). Super Admin only."""
-    return success_response(data=await service.list_trunks())
+@admin_router.get("/trunks", response_model=SuccessResponse[TrunkList], summary="SIP trunks and dispatch rules you may manage")
+async def list_trunks(auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    """Outbound trunks, inbound trunks and dispatch rules (passwords are never returned). A Super Admin sees the whole LiveKit
+    project; an organization Admin only their own organization's, and can create, edit and delete only those.
+    **Auth:** Super Admin or organization Admin."""
+    return success_response(data=await service.list_trunks(auth))
 
 
 @admin_router.post("/trunks/{kind}", response_model=SuccessResponse[TrunkOut], summary="Create an outbound or inbound trunk")
-async def create_trunk(kind: Literal["outbound", "inbound"], payload: TrunkIn, _: AuthContext = Depends(require_super_admin)) -> dict:
-    return success_response(message="Trunk created", data=await service.create_trunk(kind, payload))
+async def create_trunk(kind: Literal["outbound", "inbound"], payload: TrunkIn, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    return success_response(message="Trunk created", data=await service.create_trunk(kind, payload, auth))
 
 
 @admin_router.patch("/trunks/{kind}/{trunk_id}", response_model=SuccessResponse[TrunkOut], summary="Update a trunk")
-async def update_trunk(kind: Literal["outbound", "inbound"], trunk_id: str, payload: TrunkUpdate, _: AuthContext = Depends(require_super_admin)) -> dict:
+async def update_trunk(kind: Literal["outbound", "inbound"], trunk_id: str, payload: TrunkUpdate, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
     """Only the fields sent are changed; an empty `auth_password` keeps the current one."""
-    return success_response(message="Trunk updated", data=await service.update_trunk(kind, trunk_id, payload))
+    return success_response(message="Trunk updated", data=await service.update_trunk(kind, trunk_id, payload, auth))
 
 
 @admin_router.get("/trunks/{kind}/{trunk_id}/raw", response_model=SuccessResponse[RawTrunk], summary="A trunk as LiveKit JSON (for the JSON editor)")
-async def get_trunk_raw(kind: Literal["outbound", "inbound"], trunk_id: str, _: AuthContext = Depends(require_super_admin)) -> dict:
+async def get_trunk_raw(kind: Literal["outbound", "inbound"], trunk_id: str, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
     """Every field of the trunk as camelCase JSON, like the LiveKit dashboard: defaults included, read-only id and timestamps
-    included (ignored on save), password never included. Super Admin only."""
-    return success_response(data={"trunk": await service.get_trunk_raw(kind, trunk_id)})
+    included (ignored on save), password never included. For an org Admin `metadata` is read-only (kept as is).
+    **Auth:** Super Admin or organization Admin (own organization's trunks only)."""
+    return success_response(data={"trunk": await service.get_trunk_raw(kind, trunk_id, auth)})
 
 
 @admin_router.put("/trunks/{kind}/{trunk_id}/raw", response_model=SuccessResponse[TrunkOut], summary="Replace a trunk from edited JSON")
-async def put_trunk_raw(kind: Literal["outbound", "inbound"], trunk_id: str, payload: RawTrunk, _: AuthContext = Depends(require_super_admin)) -> dict:
+async def put_trunk_raw(kind: Literal["outbound", "inbound"], trunk_id: str, payload: RawTrunk, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
     """Replaces the trunk with the JSON (omitted fields are cleared). `authPassword` may be omitted to keep the saved one.
     **Errors:** `UNPROCESSABLE_ENTITY` for unknown fields or wrong types, `BAD_REQUEST` if a password is required."""
-    return success_response(message="Trunk updated", data=await service.replace_trunk_raw(kind, trunk_id, payload.trunk))
+    return success_response(message="Trunk updated", data=await service.replace_trunk_raw(kind, trunk_id, payload.trunk, auth))
 
 
 @admin_router.delete("/trunks/{kind}/{trunk_id}", response_model=SuccessResponse[dict], summary="Delete a trunk or dispatch rule")
-async def delete_trunk(kind: Literal["outbound", "inbound", "dispatch-rule"], trunk_id: str, _: AuthContext = Depends(require_super_admin)) -> dict:
-    await service.delete_trunk(kind, trunk_id)
+async def delete_trunk(kind: Literal["outbound", "inbound", "dispatch-rule"], trunk_id: str, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    await service.delete_trunk(kind, trunk_id, auth)
     return success_response(message="Deleted", data={"id": trunk_id})

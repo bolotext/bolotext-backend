@@ -394,6 +394,67 @@ async def place_call(agent_id: PydanticObjectId, auth: AuthContext, p: Telephony
 # ------------------------------------------------- Super Admin: trunk CRUD
 
 
+def _scope(auth: AuthContext) -> str | None:
+    """None = every trunk (Super Admin); otherwise the one organization this Admin may manage."""
+    return None if auth.is_super_admin else auth.organization_id
+
+
+def _meta(raw: str | None) -> dict:
+    try:
+        v = json.loads(raw or "{}")
+        return v if isinstance(v, dict) else {}
+    except ValueError:
+        return {}
+
+
+async def _ownership() -> tuple[dict[str, str | None], dict[str, str | None], dict[str, str | None]]:
+    """(id -> org for what agents created, id -> org for anything an agent links to, agent id -> org).
+    A shared trunk an agent merely linked is not counted in the first map: linking never gives its org the trunk."""
+    created: dict[str, str | None] = {}
+    linked: dict[str, str | None] = {}
+    by_agent: dict[str, str | None] = {}
+    for c in await TelephonyConnection.find_all().to_list():
+        by_agent[c.agent_id] = c.org_id
+        if c.outbound_trunk_id:
+            linked[c.outbound_trunk_id] = c.org_id
+            if not c.outbound_trunk_shared:
+                created[c.outbound_trunk_id] = c.org_id
+        for tid in (c.inbound_trunk_id, c.dispatch_rule_id):
+            if tid:
+                created[tid] = linked[tid] = c.org_id
+    return created, linked, by_agent
+
+
+def _org_of(item_id: str, metadata: str | None, own: tuple[dict, dict, dict]) -> str | None:
+    """The organization a trunk or rule belongs to: stamped on it by an org Admin, made for one of its agents, or
+    (if an agent created it and then others linked it) the org that links it. None = a Super Admin's shared one."""
+    created, linked, by_agent = own
+    m = _meta(metadata)
+    org = m.get("org_id") or created.get(item_id) or by_agent.get(m.get("agent_id"))
+    if org is None and "agent_id" in m:
+        org = linked.get(item_id)
+    return org
+
+
+def _manageable(scope: str | None, org: str | None) -> bool:
+    return scope is None or (org is not None and org == scope)
+
+
+async def _assert_manageable(auth: AuthContext, kind: str, item_id: str) -> None:
+    """404 (not 403, so it doesn't reveal other organizations' trunks) unless this caller may manage the item."""
+    scope = _scope(auth)
+    if scope is None:
+        return
+    async with _lk() as lk:
+        if kind == "dispatch-rule":
+            res = await _lk_call(lk.sip.list_sip_dispatch_rule(lksip.ListSIPDispatchRuleRequest()))
+            item = next((r for r in res.items if r.sip_dispatch_rule_id == item_id), None)
+        else:
+            item = await _get_trunk_info(lk, kind, item_id)  # raises NotFound itself
+    if item is None or not _manageable(scope, _org_of(item_id, item.metadata, await _ownership())):
+        raise NotFoundError("Trunk not found")
+
+
 async def _agent_map() -> dict[str, str]:
     m: dict[str, str] = {}
     for c in await TelephonyConnection.find_all().to_list():
@@ -417,27 +478,34 @@ def _inbound_out(t, owners: dict[str, str]) -> TrunkOut:
     )
 
 
-async def list_trunks() -> TrunkList:
+async def list_trunks(auth: AuthContext) -> TrunkList:
+    """Every trunk for a Super Admin; for an org Admin only their own organization's."""
+    scope = _scope(auth)
     owners = await _agent_map()
+    own = await _ownership()
     async with _lk() as lk:
         out = await _lk_call(lk.sip.list_sip_outbound_trunk(lksip.ListSIPOutboundTrunkRequest()))
         inn = await _lk_call(lk.sip.list_sip_inbound_trunk(lksip.ListSIPInboundTrunkRequest()))
         rules = await _lk_call(lk.sip.list_sip_dispatch_rule(lksip.ListSIPDispatchRuleRequest()))
+    mine = lambda i, m: _manageable(scope, _org_of(i, m, own))  # noqa: E731
     return TrunkList(
         origination_uri=get_settings().livekit_sip_uri,
-        outbound=[_outbound_out(t, owners) for t in out.items],
-        inbound=[_inbound_out(t, owners) for t in inn.items],
+        outbound=[_outbound_out(t, owners) for t in out.items if mine(t.sip_trunk_id, t.metadata)],
+        inbound=[_inbound_out(t, owners) for t in inn.items if mine(t.sip_trunk_id, t.metadata)],
         dispatch_rules=[
             DispatchRuleOut(
                 id=r.sip_dispatch_rule_id, name=r.name, trunk_ids=list(r.trunk_ids), metadata=r.metadata or None,
                 room_prefix=r.rule.dispatch_rule_individual.room_prefix or None, agent_id=owners.get(r.sip_dispatch_rule_id),
             )
             for r in rules.items
+            if mine(r.sip_dispatch_rule_id, r.metadata)
         ],
     )
 
 
-async def create_trunk(kind: str, p: TrunkIn) -> TrunkOut:
+async def create_trunk(kind: str, p: TrunkIn, auth: AuthContext) -> TrunkOut:
+    scope = _scope(auth)
+    stamp = json.dumps({"org_id": scope}) if scope else ""  # how an org Admin's trunk is recognised as theirs
     if kind == "outbound":
         if not p.address:
             raise BadRequestError("An outbound trunk needs the provider's SIP address")
@@ -445,21 +513,22 @@ async def create_trunk(kind: str, p: TrunkIn) -> TrunkOut:
             raise BadRequestError("Enter the auth password for this username")
         trunk = lksip.SIPOutboundTrunkInfo(
             name=p.name, address=p.address, numbers=p.numbers, transport=_TRANSPORT[p.transport],
-            auth_username=p.auth_username or "", auth_password=p.auth_password or "",
+            auth_username=p.auth_username or "", auth_password=p.auth_password or "", metadata=stamp,
         )
         async with _lk() as lk:
             t = await _lk_call(lk.sip.create_sip_outbound_trunk(lksip.CreateSIPOutboundTrunkRequest(trunk=trunk)))
         return _outbound_out(t, {})
     trunk = lksip.SIPInboundTrunkInfo(
         name=p.name, numbers=p.numbers, allowed_addresses=p.allowed_addresses,
-        auth_username=p.auth_username or "", auth_password=p.auth_password or "",
+        auth_username=p.auth_username or "", auth_password=p.auth_password or "", metadata=stamp,
     )
     async with _lk() as lk:
         t = await _lk_call(lk.sip.create_sip_inbound_trunk(lksip.CreateSIPInboundTrunkRequest(trunk=trunk)))
     return _inbound_out(t, {})
 
 
-async def update_trunk(kind: str, trunk_id: str, p: TrunkUpdate) -> TrunkOut:
+async def update_trunk(kind: str, trunk_id: str, p: TrunkUpdate, auth: AuthContext) -> TrunkOut:
+    await _assert_manageable(auth, kind, trunk_id)
     async with _lk() as lk:
         if kind == "outbound":
             t = await _lk_call(
@@ -492,9 +561,10 @@ async def _get_trunk_info(lk: api.LiveKitAPI, kind: str, trunk_id: str):
     return info
 
 
-async def get_trunk_raw(kind: str, trunk_id: str) -> dict:
+async def get_trunk_raw(kind: str, trunk_id: str, auth: AuthContext) -> dict:
     """The trunk as LiveKit JSON for the JSON editor: every field, including empty/default ones and the read-only
     id and timestamps (ignored on save), but never the password."""
+    await _assert_manageable(auth, kind, trunk_id)
     async with _lk() as lk:
         info = await _get_trunk_info(lk, kind, trunk_id)
     doc = MessageToDict(info, always_print_fields_with_no_presence=True)
@@ -502,9 +572,10 @@ async def get_trunk_raw(kind: str, trunk_id: str) -> dict:
     return doc
 
 
-async def replace_trunk_raw(kind: str, trunk_id: str, doc: dict) -> TrunkOut:
+async def replace_trunk_raw(kind: str, trunk_id: str, doc: dict, auth: AuthContext) -> TrunkOut:
     """Replaces the trunk with the edited JSON. Anything omitted from the JSON is cleared (LiveKit replace
     semantics), except the password: it is not shown in the editor, so when `authPassword` is absent the saved one is kept."""
+    await _assert_manageable(auth, kind, trunk_id)
     info_cls = lksip.SIPOutboundTrunkInfo if kind == "outbound" else lksip.SIPInboundTrunkInfo
     try:
         info = ParseDict({k: v for k, v in doc.items() if k not in _RAW_READONLY}, info_cls())
@@ -520,6 +591,9 @@ async def replace_trunk_raw(kind: str, trunk_id: str, doc: dict) -> TrunkOut:
                 # LiveKit may not return the stored password, and a replace without it would wipe it.
                 raise BadRequestError('Add "authPassword" to the JSON: the saved password can\'t be read back, and saving without it would clear it')
         info.sip_trunk_id = trunk_id
+        if _scope(auth) is not None:
+            # An org Admin can't edit metadata: it is what ties the trunk to their organization (or to an agent).
+            info.metadata = existing.metadata
         if kind == "outbound":
             saved = await _lk_call(lk.sip.update_sip_outbound_trunk(trunk_id, info))
             return _outbound_out(saved, await _agent_map())
@@ -527,7 +601,8 @@ async def replace_trunk_raw(kind: str, trunk_id: str, doc: dict) -> TrunkOut:
         return _inbound_out(saved, await _agent_map())
 
 
-async def delete_trunk(kind: str, trunk_id: str) -> None:
+async def delete_trunk(kind: str, trunk_id: str, auth: AuthContext) -> None:
+    await _assert_manageable(auth, kind, trunk_id)
     async with _lk() as lk:
         if kind == "dispatch-rule":
             await _lk_call(lk.sip.delete_sip_dispatch_rule(lksip.DeleteSIPDispatchRuleRequest(sip_dispatch_rule_id=trunk_id)))
