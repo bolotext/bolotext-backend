@@ -1,5 +1,5 @@
 from common.enums import Role
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -16,6 +16,19 @@ class LoginRequest(BaseModel):
         description="Which organization to log into. Only required on a second attempt, after a "
         "first login without it returned `organizations` instead of tokens because the account "
         "belongs to more than one.",
+    )
+
+
+class PasswordLoginRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"email": "jane.doe@example.com", "password": "<password>"}}
+    )
+
+    email: EmailStr = Field(description="The account's email address.")
+    password: str = Field(min_length=1, max_length=128, description="The account's password.")
+    organization_id: str | None = Field(
+        default=None,
+        description="Which organization to log into; same semantics as on the Google login request.",
     )
 
 

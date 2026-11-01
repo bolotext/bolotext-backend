@@ -18,6 +18,8 @@ class User(Document):
 
     email: str
     full_name: str
+    # None for accounts that only use Google sign-in; set via PUT /users/me/password.
+    hashed_password: str | None = None
     is_super_admin: bool = False
     status: UserStatus = UserStatus.ACTIVE
     created_by: PydanticObjectId | None = None
@@ -28,7 +30,7 @@ class User(Document):
     class Settings:
         name = "users"
         indexes = [
-            # Global uniqueness: login takes only a Google credential with no
+            # Global uniqueness: login (Google or email+password) carries no
             # org context, so email must resolve unambiguously.
             IndexModel("email", unique=True),
         ]

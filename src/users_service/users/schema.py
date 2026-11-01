@@ -20,6 +20,13 @@ class UserCreate(BaseModel):
     email: EmailStr = Field(description="The new user's email address; must be unique across the platform.")
     full_name: str = Field(min_length=1, max_length=200, description="The new user's display name.")
     role: Role = Field(description="Role to grant the user within the target organization.")
+    password: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        description="Optional initial password so the user can log in with email+password. Omit for "
+        "Google-only sign-in. Not allowed when the email already belongs to an existing user.",
+    )
     # Required when the caller is SUPER_ADMIN (which org to create the user in).
     # Ignored/overridden for org-scoped callers, who may only create within their own org.
     organization_id: str | None = Field(
@@ -66,3 +73,15 @@ class UserOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None = Field(description="When the user last logged in successfully; `null` if never.")
+
+
+class AdminPasswordSet(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128, description="The new password (8-128 characters).")
+
+
+class PasswordSet(BaseModel):
+    new_password: str = Field(min_length=8, max_length=128, description="The new password (8-128 characters).")
+    current_password: str | None = Field(
+        default=None,
+        description="Required when the account already has a password; omit when setting the first one.",
+    )

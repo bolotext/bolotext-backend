@@ -43,8 +43,8 @@ agents, plus the shared LLM/STT/TTS provider+model registry.
 ## Authentication
 Every endpoint except `/health` requires a bearer access token issued by the
 Users service: `Authorization: Bearer <access_token>`. This service does not
-verify the token itself — it calls the Users service's internal introspection
-endpoint on every request, so a disabled user or a role/membership change
+verify the token itself — it resolves identity through the Users service's
+introspection logic on every request, so a disabled user or a role/membership change
 takes effect immediately, not when the token happens to expire.
 
 ## Response envelope

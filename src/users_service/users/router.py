@@ -12,9 +12,10 @@ from users_service.memberships import service as membership_service
 from users_service.memberships.model import OrganizationMembership
 from users_service.memberships.schema import MyOrganizationOut, MyOrganizationsResponse, PageInfo
 from users_service.organizations import repository as organization_repo
+from users_service.auth import service as auth_service
 from users_service.users import service as user_service
 from users_service.users.model import User
-from users_service.users.schema import UserCreate, UserOut, UserSelfUpdate, UserUpdate
+from users_service.users.schema import AdminPasswordSet, PasswordSet, UserCreate, UserOut, UserSelfUpdate, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -120,6 +121,25 @@ async def update_me(payload: UserSelfUpdate, auth: AuthContext = Depends(get_cur
     return success_response(message="Profile updated", data=_to_out(updated, membership))
 
 
+@router.put(
+    "/me/password",
+    response_model=SuccessResponse[None],
+    summary="Set or change the caller's password",
+)
+async def set_my_password(payload: PasswordSet, auth: AuthContext = Depends(get_current_auth)) -> dict:
+    """Sets the caller's password so they can also log in with email+password.
+    If one already exists, `current_password` must be supplied. All refresh
+    tokens are revoked, so other sessions must log in again.
+
+    **Auth:** Bearer access token required (any authenticated user).
+
+    **Errors:**
+    - `UNAUTHORIZED` — missing/invalid token, or `current_password` is wrong/missing.
+    """
+    await auth_service.set_password(auth.user, payload.new_password, payload.current_password)
+    return success_response(message="Password updated")
+
+
 @router.post(
     "",
     response_model=SuccessResponse[UserOut],
@@ -138,9 +158,10 @@ async def create_user(
     **Errors:**
     - `FORBIDDEN` — caller lacks the `user.create` permission.
     - `BAD_REQUEST` — `role` is not one of ADMIN, DEVELOPER, QA; or the
-      caller is a Super Admin and omitted/sent an invalid `organization_id`.
+      caller is a Super Admin and omitted/sent an invalid `organization_id`;
+      or `password` was sent for an email that already has an account.
     - `NOT_FOUND` — `organization_id` doesn't match an existing organization.
-    - `CONFLICT` — a user with this email already exists.
+    - `CONFLICT` — the email is already a member of this organization.
     """
     user, membership = await user_service.create_user(
         auth,
@@ -148,6 +169,7 @@ async def create_user(
         full_name=payload.full_name,
         role=payload.role,
         organization_id=payload.organization_id,
+        password=payload.password,
     )
     return success_response(code=201, message="User created", data=_to_out(user, membership))
 
@@ -241,6 +263,31 @@ async def update_user(
         status=payload.status,
     )
     return success_response(message="User updated", data=_to_out(user, membership))
+
+
+@router.put(
+    "/{user_id}/password",
+    response_model=SuccessResponse[None],
+    summary="Set another user's password",
+)
+async def set_user_password(
+    payload: AdminPasswordSet,
+    user_id: PydanticObjectId = Path(description="The user whose password to set."),
+    auth: AuthContext = Depends(get_current_auth),
+) -> dict:
+    """Overwrites a user's password without needing their current one, and
+    revokes all of their refresh tokens so they must log in again.
+
+    **Auth:** Bearer access token of a Super Admin (any user) or an
+    organization Admin (Developers and QA in their own organization only).
+
+    **Errors:**
+    - `FORBIDDEN` — caller is a Developer/QA, or an Admin targeting an Admin,
+      a Super Admin, or a user who is an Admin in another organization.
+    - `NOT_FOUND` — no such user exists (or isn't in the caller's organization).
+    """
+    await user_service.admin_set_password(auth, user_id, payload.new_password)
+    return success_response(message="Password updated")
 
 
 @router.delete(

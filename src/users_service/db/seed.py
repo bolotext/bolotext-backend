@@ -136,23 +136,9 @@ async def backfill_memberships() -> None:
         await collection.update_one({"_id": user_id}, {"$unset": {"role": "", "organization_id": ""}})
 
 
-async def drop_legacy_password_fields() -> None:
-    """One-time, idempotent migration: login is Google-only, so any stored
-    `hashed_password` / `must_change_password` is dead credential data. Unset
-    it from raw Mongo (the Beanie `User` model no longer declares them).
-    """
-    result = await User.get_pymongo_collection().update_many(
-        {"$or": [{"hashed_password": {"$exists": True}}, {"must_change_password": {"$exists": True}}]},
-        {"$unset": {"hashed_password": "", "must_change_password": ""}},
-    )
-    if result.modified_count:
-        logger.info("Removed legacy password fields from %d user(s)", result.modified_count)
-
-
 async def seed_all() -> None:
     """Idempotent: safe to run on every startup and via a manual `python main.py seed`."""
     await seed_roles()
     await seed_permissions()
     await seed_bootstrap_super_admin()
     await backfill_memberships()
-    await drop_legacy_password_fields()

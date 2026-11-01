@@ -1,9 +1,12 @@
+import asyncio
+
 from beanie import PydanticObjectId
 from common.enums import Role
 from common.errors import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 
 from users_service.auth import repository as refresh_token_repo
 from users_service.core.deps import AuthContext
+from users_service.core.security import hash_password
 from users_service.enums import UserStatus
 from users_service.memberships import repository as membership_repo
 from users_service.memberships.model import OrganizationMembership
@@ -20,6 +23,7 @@ async def create_user(
     full_name: str,
     role: Role,
     organization_id: str | None,
+    password: str | None = None,
 ) -> tuple[User, OrganizationMembership]:
     if role not in ORG_ASSIGNABLE_ROLES:
         raise BadRequestError("role must be one of ADMIN, DEVELOPER, QA", {"field": "role"})
@@ -39,6 +43,10 @@ async def create_user(
 
     existing = await user_repo.get_by_email(email)
     if existing is not None:
+        if password is not None:
+            raise BadRequestError(
+                "This email already has an account; its owner sets their own password", {"field": "password"}
+            )
         # Email is global (one account, many orgs): an existing user is added
         # to this org as a new membership rather than duplicated.
         if existing.is_super_admin:
@@ -53,6 +61,7 @@ async def create_user(
         full_name=full_name,
         created_by=auth.user_id,
         status=UserStatus.ACTIVE,
+        hashed_password=await asyncio.to_thread(hash_password, password) if password else None,
     )
     membership = await membership_repo.create(user.id, target_org_id, role, created_by=auth.user_id)
     return user, membership
@@ -148,3 +157,29 @@ async def disable_user(auth: AuthContext, user_id: PydanticObjectId) -> tuple[Us
 
 async def update_self(auth: AuthContext, full_name: str | None) -> User:
     return await user_repo.update_user(auth.user, full_name=full_name)
+
+
+async def admin_set_password(auth: AuthContext, user_id: PydanticObjectId, new_password: str) -> None:
+    """Overwrites a user's password without the current one and revokes all of
+    their refresh tokens. A Super Admin may do this for anyone; an org Admin
+    only for Developers/QA in their own organization (never for an Admin or
+    Super Admin, and not for someone who is an Admin in any other organization,
+    since the password is account-wide).
+    """
+    if auth.is_super_admin:
+        target = await user_repo.get_by_id_global(user_id)
+        if target is None:
+            raise NotFoundError("User not found")
+    elif auth.role == Role.ADMIN:
+        found = await user_repo.get_by_id_scoped(user_id, auth.organization_id)
+        if found is None:
+            raise NotFoundError("User not found")
+        target, membership = found
+        if target.is_super_admin or membership.role == Role.ADMIN:
+            raise ForbiddenError("You can only set passwords for Developers and QA")
+        if any(m.role == Role.ADMIN for m in await membership_repo.list_for_user(target.id)):
+            raise ForbiddenError("This user is an Admin in another organization")
+    else:
+        raise ForbiddenError("You do not have permission to set another user's password")
+    await user_repo.set_password(target, await asyncio.to_thread(hash_password, new_password))
+    await refresh_token_repo.revoke_all_for_user(target.id)

@@ -32,9 +32,6 @@ class Settings(BaseSettings):
     # Google Sign-In (OAuth client id the ID token's audience must match)
     google_client_id: str | None = None
 
-    # Internal service-to-service auth (for the token introspection endpoint)
-    internal_api_key: str = "change-me-internal-key"
-
     # Rate limiting
     login_rate_limit: str = "5/minute"
 

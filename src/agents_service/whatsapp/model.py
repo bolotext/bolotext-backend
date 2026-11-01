@@ -27,12 +27,12 @@ class FieldDef(BaseModel):
 
 class WhatsAppSettings(Document):
     """Per-organization Twilio configuration, one document per org. The auth
-    token is stored Fernet-encrypted and is never returned by any endpoint.
+    token is stored as-is (not encrypted) and is never returned by any endpoint.
     """
 
     org_id: str
     twilio_account_sid: str = ""
-    twilio_auth_token_enc: str = ""
+    twilio_auth_token: str = ""
     twilio_auth_token_last4: str = ""
     twilio_whatsapp_from: str = ""
     twilio_sms_from: str = ""  # SMS-capable number, or a Messaging Service SID (MG…)

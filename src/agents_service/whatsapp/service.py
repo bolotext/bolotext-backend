@@ -13,7 +13,6 @@ from common.log_utils import setup_logger
 
 from agents_service.core.config import get_settings
 from agents_service.core.deps import AuthContext
-from agents_service.whatsapp import crypto
 from agents_service.whatsapp.model import (
     FieldDef,
     WhatsAppAgent,
@@ -207,7 +206,7 @@ async def _settings_doc(org_id: str | None) -> WhatsAppSettings | None:
 
 
 def _doc_simulated(doc: WhatsAppSettings | None) -> bool:
-    return doc is None or doc.dry_run or not (doc.twilio_account_sid and doc.twilio_auth_token_enc)
+    return doc is None or doc.dry_run or not (doc.twilio_account_sid and doc.twilio_auth_token)
 
 
 async def load_config(org_id: str | None) -> TwilioConfig:
@@ -217,17 +216,8 @@ async def load_config(org_id: str | None) -> TwilioConfig:
     doc = await _settings_doc(org_id)
     if doc is None:
         return TwilioConfig()
-    token = ""
-    if doc.twilio_auth_token_enc:
-        try:
-            token = crypto.decrypt(doc.twilio_auth_token_enc)
-        except ValueError:
-            logger.error("whatsapp settings for org %s: saved auth token can't be decrypted", org_id)
-            raise UnprocessableEntityError(
-                "The saved Twilio auth token can't be decrypted (the encryption key changed). Re-enter it in Twilio settings."
-            ) from None
     return TwilioConfig(
-        account_sid=doc.twilio_account_sid, auth_token=token, whatsapp_from=doc.twilio_whatsapp_from,
+        account_sid=doc.twilio_account_sid, auth_token=doc.twilio_auth_token, whatsapp_from=doc.twilio_whatsapp_from,
         sms_from=doc.twilio_sms_from, dry_run=doc.dry_run, default_country_code=doc.default_country_code,
     )  # fmt: skip
 
@@ -240,8 +230,8 @@ async def _country_code(org_id: str | None) -> str:
 def settings_out(doc: WhatsAppSettings | None) -> SettingsOut:
     return SettingsOut(
         twilio_account_sid=doc.twilio_account_sid if doc else "",
-        has_auth_token=bool(doc and doc.twilio_auth_token_enc),
-        auth_token_hint=f"••••{doc.twilio_auth_token_last4}" if doc and doc.twilio_auth_token_enc else None,
+        has_auth_token=bool(doc and doc.twilio_auth_token),
+        auth_token_hint=f"••••{doc.twilio_auth_token_last4}" if doc and doc.twilio_auth_token else None,
         twilio_whatsapp_from=doc.twilio_whatsapp_from if doc else "",
         twilio_sms_from=doc.twilio_sms_from if doc else "",
         dry_run=doc.dry_run if doc else True,
@@ -303,12 +293,12 @@ async def update_settings(auth: AuthContext, payload: SettingsUpdate) -> Setting
         token = token.strip()
         if len(token) < 16 or re.search(r"\s", token):
             raise UnprocessableEntityError("auth_token: doesn't look like a Twilio auth token")
-        doc.twilio_auth_token_enc = crypto.encrypt(token)
+        doc.twilio_auth_token = token
         doc.twilio_auth_token_last4 = token[-4:]
     if ch.get("dry_run") is not None:
         doc.dry_run = ch["dry_run"]
 
-    if not doc.dry_run and not (doc.twilio_account_sid and doc.twilio_auth_token_enc):
+    if not doc.dry_run and not (doc.twilio_account_sid and doc.twilio_auth_token):
         raise UnprocessableEntityError("Real sending needs both the Account SID and the Auth Token. Save them, or keep dry-run on.")
 
     doc.updated_by, doc.updated_at = auth.user_id, _now()

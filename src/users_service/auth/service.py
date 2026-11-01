@@ -16,7 +16,10 @@ from users_service.core.security import (
     create_access_token,
     create_refresh_token,
     decode_own_token,
+    DUMMY_PASSWORD_HASH,
+    hash_password,
     hash_refresh_token,
+    verify_password,
 )
 from users_service.core.time import ensure_aware_utc
 from users_service.enums import UserStatus
@@ -80,6 +83,22 @@ async def login(google_credential: str, organization_id: str | None = None) -> L
     user = await user_repo.get_by_email(email)
     if user is None:
         raise UnauthorizedError("No account exists for this Google user")
+    return await _login_user(user, organization_id)
+
+
+async def login_with_password(email: str, password: str, organization_id: str | None = None) -> LoginResult:
+    user = await user_repo.get_by_email(email.lower())
+    stored_hash = user.hashed_password if user is not None else None
+    # scrypt is CPU-heavy; keep it off the event loop. Always run one
+    # verification (against a dummy hash if need be) so timing doesn't leak
+    # which emails exist.
+    valid = await asyncio.to_thread(verify_password, password, stored_hash or DUMMY_PASSWORD_HASH)
+    if user is None or not stored_hash or not valid:
+        raise UnauthorizedError("Invalid email or password")
+    return await _login_user(user, organization_id)
+
+
+async def _login_user(user: User, organization_id: str | None) -> LoginResult:
     if user.status != UserStatus.ACTIVE:
         raise UnauthorizedError("This account is not active")
 
@@ -173,3 +192,19 @@ async def logout(refresh_token: str) -> None:
     if record is None:
         raise UnauthorizedError("Refresh token has been revoked or does not exist")
     await refresh_token_repo.revoke(record)
+
+
+async def set_password(user: User, new_password: str, current_password: str | None) -> None:
+    """Sets or changes the caller's password. Changing an existing password
+    requires the current one; setting the first one (Google-only account) does
+    not, since the caller is already authenticated. Revokes every refresh
+    token so other sessions must re-authenticate.
+    """
+    if user.hashed_password:
+        if not current_password or not await asyncio.to_thread(
+            verify_password, current_password, user.hashed_password
+        ):
+            raise UnauthorizedError("Current password is incorrect")
+    hashed = await asyncio.to_thread(hash_password, new_password)
+    await user_repo.set_password(user, hashed)
+    await refresh_token_repo.revoke_all_for_user(user.id)

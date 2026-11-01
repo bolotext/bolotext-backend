@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
 
 from users_service.api_tokens.router import router as api_tokens_router
-from users_service.auth.router import internal_router as auth_internal_router
 from users_service.auth.router import router as auth_router
 from users_service.core.config import get_settings
 from users_service.core.rate_limit import limiter, rate_limit_exceeded_handler
@@ -22,16 +21,14 @@ logging.basicConfig(level=settings.log_level)
 
 API_DESCRIPTION = """
 Identity service: login and token issuance, organizations, memberships, and
-users. Other internal services (e.g. Agents) resolve identity from an access
-token via `/api/v1/internal/introspect` rather than verifying JWTs locally.
+users. The Agents service resolves identity from an access token in-process
+rather than verifying JWTs itself.
 
 ## Authentication
 Most endpoints require a bearer access token: `Authorization: Bearer
 <access_token>`, obtained from `POST /auth/login`. `POST /auth/login`,
-`POST /auth/refresh`, `POST /auth/logout`, and `POST /internal/introspect`
-do not require one — `/internal/introspect` is instead guarded by a shared
-internal API key (`X-Internal-Api-Key` header), since its caller is another
-service, not a user.
+`POST /auth/login/password`, `POST /auth/refresh`, and `POST /auth/logout`
+do not require one.
 
 Endpoints beyond simple "must be logged in" also require a specific
 permission (e.g. `user.create`) or role, evaluated against the caller's
@@ -54,11 +51,6 @@ TAGS_METADATA = [
     {"name": "organizations", "description": "Tenant organizations."},
     {"name": "memberships", "description": "A user's role within an organization."},
     {"name": "users", "description": "User accounts."},
-    {
-        "name": "internal",
-        "description": "Service-to-service endpoints, guarded by an internal API key "
-        "instead of a user access token. Not for use by end-user clients.",
-    },
 ]
 
 
@@ -84,7 +76,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(memberships_router, prefix=api_v1)
     app.include_router(users_router, prefix=api_v1)
     app.include_router(api_tokens_router, prefix=api_v1)
-    app.include_router(auth_internal_router, prefix=api_v1)
 
 
 def create_app() -> FastAPI:

@@ -28,6 +28,7 @@ async def create_user(
     created_by: PydanticObjectId | None,
     status: UserStatus = UserStatus.ACTIVE,
     is_super_admin: bool = False,
+    hashed_password: str | None = None,
 ) -> User:
     user = User(
         email=email,
@@ -35,6 +36,7 @@ async def create_user(
         is_super_admin=is_super_admin,
         status=status,
         created_by=created_by,
+        hashed_password=hashed_password,
     )
     await user.insert()
     return user
@@ -136,4 +138,10 @@ async def update_user(
 
 async def record_login(user: User) -> None:
     user.last_login_at = datetime.now(timezone.utc)
+    await user.save()
+
+
+async def set_password(user: User, hashed_password: str) -> None:
+    user.hashed_password = hashed_password
+    user.updated_at = datetime.now(timezone.utc)
     await user.save()

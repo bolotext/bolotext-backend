@@ -8,7 +8,7 @@ from users_service.api_tokens import repository as repo
 from users_service.api_tokens.model import ApiToken
 from users_service.api_tokens.schema import AGENT_CONFIG_READ, CALL_LOG_WRITE, ApiTokenCreated, ApiTokenOut
 
-# Every API token starts with this, so the introspect endpoint can tell one
+# Every API token starts with this, so token resolution can tell one
 # apart from a user JWT without trying to decode it.
 TOKEN_PREFIX = "bt_"
 

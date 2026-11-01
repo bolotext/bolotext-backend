@@ -70,7 +70,7 @@ reasonable next step once there's a second one.
 
 | Prefix | Routes to |
 |---|---|
-| `/api/v1/auth/*`, `/api/v1/organizations/*`, `/api/v1/users/*`, `/api/v1/internal/*` | Users service |
+| `/api/v1/auth/*`, `/api/v1/organizations/*`, `/api/v1/users/*` | Users service |
 | `/api/v1/agents/*`, `/api/v1/providers/*` | Agents service |
 
 ### `services/agents` — Agent builder + provider registry (:8002)
@@ -326,9 +326,9 @@ CRUD-style surface a "dynamic message" config was asked for:
 | `POST /agents/{id}/dynamic-message/enable` / `.../disable` | Shortcuts for `dynamic_message_enabled`, same idea as agent `/activate`/`/deactivate` |
 
 It does **not** decode JWTs itself: `core/deps.get_current_auth` resolves the
-caller's identity by calling the Users service's
-`POST /api/v1/internal/introspect` (shared internal API key), so JWT
-verification lives in exactly one place. Ownership is enforced per-org (an
+caller's identity through the Users service's
+access-token resolution (called in-process), so JWT verification lives in
+exactly one place. Ownership is enforced per-org (an
 agent belonging to another org 404s, not 403s, to avoid confirming it
 exists). See `services/agents/.env.example` for its config, and `/docs` on
 the running service for the full endpoint list, request/response shapes, and

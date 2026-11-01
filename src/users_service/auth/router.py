@@ -4,7 +4,7 @@ from common.errors import UnauthorizedError
 from common.jwt import ACCESS_TOKEN_TYPE, decode_token
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from users_service.api_tokens import service as api_token_service
@@ -14,6 +14,7 @@ from users_service.auth.schema import (
     LoginRequest,
     LoginResponse,
     LogoutRequest,
+    PasswordLoginRequest,
     RefreshRequest,
     SwitchOrganizationRequest,
     TokenResponse,
@@ -38,9 +39,9 @@ settings = get_settings()
 @limiter.limit(settings.login_rate_limit)
 async def login(request: Request, payload: LoginRequest) -> dict:
     """Authenticates with a Google ID token and returns a bearer access token
-    and refresh token pair for the selected organization. Google is the only
-    supported login method; the verified Google email must match an existing
-    active account.
+    and refresh token pair for the selected organization. Email+password is
+    also supported via `POST /auth/login/password`; the verified Google email
+    must match an existing active account.
 
     If the account belongs to more than one organization and `organization_id`
     wasn't supplied, no tokens are issued — the response instead carries
@@ -64,6 +65,32 @@ async def login(request: Request, payload: LoginRequest) -> dict:
             message="Select an organization to continue",
             data=LoginResponse(organizations=result.organizations),
         )
+    return success_response(
+        message="Logged in",
+        data=LoginResponse(access_token=result.access_token, refresh_token=result.refresh_token),
+    )
+
+
+@router.post(
+    "/login/password",
+    response_model=SuccessResponse[LoginResponse],
+    summary="Log in with email and password and obtain access/refresh tokens",
+)
+@limiter.limit(settings.login_rate_limit)
+async def login_password(request: Request, payload: PasswordLoginRequest) -> dict:
+    """Authenticates with an email and password and returns the same token
+    pair as `POST /auth/login` (Google). Both methods resolve to the same
+    account by email. Accounts that never set a password (Google-only) cannot
+    use this; set one first via `PUT /users/me/password`.
+
+    **Auth:** None required.
+
+    **Errors:**
+    - `UNAUTHORIZED` — unknown email, wrong password, no password set, or the
+      account is not active. The message is identical for the first three.
+    - `TOO_MANY_REQUESTS` — rate-limited per the configured login rate limit.
+    """
+    result = await auth_service.login_with_password(payload.email, payload.password, payload.organization_id)
     return success_response(
         message="Logged in",
         data=LoginResponse(access_token=result.access_token, refresh_token=result.refresh_token),
@@ -136,18 +163,9 @@ async def logout(payload: LogoutRequest) -> dict:
     return success_response(message="Logged out")
 
 
-# --- Internal, service-to-service introspection -----------------------------
-# Lets another internal microservice (e.g. Agents) resolve
-# user_id/organization_id/role from an access token without re-implementing
-# JWT verification itself. Guarded by a shared internal API key, not a user
-# JWT, since the caller here is a service.
-
-internal_router = APIRouter(prefix="/internal", tags=["internal"])
-
-
-class IntrospectRequest(BaseModel):
-    access_token: str = Field(description="The access token to validate and resolve identity from.")
-
+# --- Access-token resolution --------------------------------------------------
+# Used in-process by the Agents service (see agents_service.core.http_client)
+# to resolve user_id/organization_id/role from an access token.
 
 class IntrospectResponse(BaseModel):
     active: bool = Field(description="Whether the token is currently valid for an active user.")
@@ -163,8 +181,7 @@ class IntrospectResponse(BaseModel):
 
 
 async def resolve_access_token(access_token: str) -> IntrospectResponse:
-    """Resolves identity from an access token. Used by the introspection endpoint
-    and called in-process by the Agents routers (see agents_service.core.http_client).
+    """Resolves identity from an access token. Called in-process by the Agents routers (see agents_service.core.http_client).
     """
     # API tokens (non-expiring, Super-Admin-issued) are opaque, not JWTs.
     if access_token.startswith(api_token_service.TOKEN_PREFIX):
@@ -224,35 +241,3 @@ async def resolve_access_token(access_token: str) -> IntrospectResponse:
         active=True, user_id=user_id, organization_id=organization_id, role=str(membership.role),
         features=[str(f) for f in org.features] if org else None,
     )
-
-
-@internal_router.post(
-    "/introspect",
-    response_model=SuccessResponse[IntrospectResponse],
-    summary="Resolve identity from an access token (service-to-service)",
-)
-async def introspect(
-    payload: IntrospectRequest, x_internal_api_key: str | None = Header(default=None, description="Shared secret identifying an internal caller; must match this service's configured internal API key.")
-) -> dict:
-    """Lets another internal microservice (e.g. Agents) resolve
-    `user_id`/`organization_id`/`role` from a user's access token without
-    re-implementing JWT verification itself. Always returns HTTP 200 with
-    `data.active` indicating validity — invalid, expired, or otherwise
-    unusable tokens come back as `{"active": false}` rather than an error,
-    since "not currently authenticated" is an expected, non-exceptional
-    result for this endpoint. Role/org context is re-resolved from the
-    user's current membership on every call, never read from a stale token
-    claim, so a role change or removal from an organization is reflected
-    immediately.
-
-    **Auth:** Requires the `X-Internal-Api-Key` header to match this
-    service's configured internal API key — not a user bearer token, since
-    the caller here is a service, not an end user.
-
-    **Errors:**
-    - `UNAUTHORIZED` — `X-Internal-Api-Key` is missing or incorrect.
-    """
-    if x_internal_api_key != settings.internal_api_key:
-        raise UnauthorizedError("Invalid internal API key")
-
-    return success_response(data=await resolve_access_token(payload.access_token))

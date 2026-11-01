@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -53,3 +55,41 @@ def decode_own_token(token: str) -> dict[str, Any]:
 def hash_refresh_token(token: str) -> str:
     """Refresh tokens are stored hashed so a DB read never yields a usable token."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+# scrypt (stdlib) for password hashing: memory-hard, no extra dependency.
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(
+        password.encode("utf-8"), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32
+    )
+    return "scrypt${}${}${}${}${}".format(
+        _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, base64.b64encode(salt).decode(), base64.b64encode(digest).decode()
+    )
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        scheme, n, r, p, salt_b64, digest_b64 = hashed.split("$")
+        if scheme != "scrypt":
+            return False
+        expected = base64.b64decode(digest_b64)
+        digest = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=base64.b64decode(salt_b64),
+            n=int(n),
+            r=int(r),
+            p=int(p),
+            dklen=len(expected),
+        )
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(digest, expected)
+
+
+# Verified against when no usable account/password exists, so response time
+# doesn't reveal whether an email is registered.
+DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
