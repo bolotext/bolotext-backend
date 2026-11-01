@@ -31,6 +31,7 @@ from agents_service.prompt.router import router as prompt_router
 from agents_service.providers.router import router as providers_router
 from agents_service.transcriber.router import router as transcriber_router
 from agents_service.voice_persona.router import router as voice_persona_router
+from agents_service.usage.router import router as usage_router
 from agents_service.web_call.router import public_router as web_call_public_router
 from agents_service.web_call.router import router as web_call_router
 from agents_service.whatsapp.router import router as whatsapp_router
@@ -89,6 +90,7 @@ TAGS_METADATA = [
     {"name": "agents:actions", "description": "Custom actions/functions the agent can invoke during a call."},
     {"name": "agents:mcp", "description": "Model Context Protocol server integrations available to the agent."},
     {"name": "agents:assignments", "description": "Assigning agents to users/teams."},
+    {"name": "admin:usage", "description": "Super Admin dashboard: STT/LLM/TTS usage and cost per organization and agent."},
     {"name": "agents:web-call", "description": "LiveKit tokens for browser voice calls (builder test calls and the embeddable widget)."},
     {"name": "whatsapp", "description": "WhatsApp Business messaging via Twilio: agents, templates + approval, CSV contacts, sending and delivery status."},
     {"name": "providers", "description": "Read-only registry of available LLM/STT/TTS providers and models."},
@@ -138,6 +140,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(actions_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(mcp_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(providers_router, prefix=api_v1, dependencies=voice_env)
+    app.include_router(usage_router, prefix=api_v1)
     app.include_router(web_call_router, prefix=api_v1, dependencies=voice)
     app.include_router(web_call_public_router, prefix=api_v1)
     app.include_router(whatsapp_router, prefix=api_v1)

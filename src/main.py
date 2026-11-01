@@ -94,15 +94,28 @@ async def _seed() -> None:
     await close_users_db()
 
 
+async def _backfill_usage() -> None:
+    """Rebuild the `token_usage` rollup from stored call logs (one-off, or to repair drift)."""
+    from agents_service.usage.service import rebuild_from_call_logs
+
+    await init_agents_db(get_agents_client())
+    n = await rebuild_from_call_logs()
+    logging.getLogger(__name__).info("rebuilt token_usage from %d call logs", n)
+    await close_agents_db()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="bolotext backend")
-    parser.add_argument("command", nargs="?", default="serve", choices=["serve", "seed"])
+    parser.add_argument("command", nargs="?", default="serve", choices=["serve", "seed", "backfill-usage"])
     parser.add_argument("--log-level", default=settings.log_level.lower())
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level.upper())
     if args.command == "seed":
         asyncio.run(_seed())
+        return
+    if args.command == "backfill-usage":
+        asyncio.run(_backfill_usage())
         return
 
     # Reload is derived from ENVIRONMENT, never its own independent flag —

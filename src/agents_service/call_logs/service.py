@@ -10,6 +10,7 @@ from agents_service.agents.model import Agent
 from agents_service.call_logs.model import CallLog
 from agents_service.call_logs.schema import CallLogListOut, CallLogOut, CallLogStored, CallLogSummary
 from agents_service.core.deps import AuthContext
+from agents_service.usage import service as usage_service
 
 logger = setup_logger(__name__)
 
@@ -86,6 +87,7 @@ async def ingest(agent_id: str, call_payload: dict) -> CallLogStored:
         if fields["session_id"]
         else None
     )
+    old_interaction, old_when = (existing.interaction, existing.started_at or existing.created_at) if existing is not None else (None, None)
     if existing is not None:
         for k, v in fields.items():
             setattr(existing, k, v)
@@ -96,6 +98,15 @@ async def ingest(agent_id: str, call_payload: dict) -> CallLogStored:
         log = CallLog(agent_id=agent_id, **fields)
         await log.insert()
         created = True
+    # Keep the usage rollup (token_usage collection) in step with the stored call.
+    await usage_service.record_call(
+        org_id=agent.org_id,
+        agent_id=agent_id,
+        new=interaction,
+        new_when=fields["started_at"] or log.created_at,
+        old=old_interaction,
+        old_when=old_when,
+    )
     logger.info("call log stored: agent=%s session=%s id=%s created=%s", agent_id, log.session_id, log.id, created)
     return CallLogStored(id=str(log.id), agent_id=agent_id, session_id=log.session_id, created=created)
 

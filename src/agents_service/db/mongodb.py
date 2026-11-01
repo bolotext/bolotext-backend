@@ -7,6 +7,7 @@ from agents_service.agents.model import Agent
 from agents_service.call_logs.model import CallLog
 from agents_service.core.config import get_settings
 from agents_service.prompt.version_model import SystemPromptVersion
+from agents_service.usage.model import ModelPrice, UsageRollup, UsageSettings
 from agents_service.whatsapp.model import (
     WhatsAppAgent,
     WhatsAppBatch,
@@ -47,6 +48,9 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
         document_models=[
             Agent,
             AgentConfig,
+            UsageRollup,
+            ModelPrice,
+            UsageSettings,
             SystemPromptVersion,
             AgentAssignment,
             CallLog,
@@ -59,6 +63,10 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
         ],
     )
     await _migrate_phone_numbers()
+    # Imported here: usage.service imports this package's models, so a top-level import would be circular.
+    from agents_service.usage.service import drop_stale_indexes
+
+    await drop_stale_indexes()
 
 
 async def _migrate_phone_numbers() -> None:
