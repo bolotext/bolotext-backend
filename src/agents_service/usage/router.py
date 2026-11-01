@@ -1,6 +1,7 @@
 import re
 
 from beanie import PydanticObjectId  # noqa: F401  (kept for parity with sibling routers)
+from common.enums import Role
 from common.errors import ForbiddenError, UnprocessableEntityError
 from common.responses import success_response
 from common.schemas import SuccessResponse
@@ -19,6 +20,9 @@ from agents_service.usage.schema import (
 )
 
 router = APIRouter(prefix="/admin/usage", tags=["admin:usage"])
+
+# Organization Admins: their own org only (see `my_usage`).
+org_router = APIRouter(prefix="/usage", tags=["usage"])
 
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -80,3 +84,25 @@ async def organization_usage(
 ) -> dict:
     """Totals, per-agent and per-provider/model usage and cost for one organization. Super Admin only."""
     return success_response(data=await service.org_detail(org_id, _day(day_from, "from"), _day(day_to, "to"), include_test))
+
+
+async def require_org_admin(auth: AuthContext = Depends(get_current_auth)) -> AuthContext:
+    """Only an Admin of an organization (Super Admins use /admin/usage instead)."""
+    if auth.role != Role.ADMIN or not auth.organization_id:
+        raise ForbiddenError("Only an organization Admin can view the organization's usage")
+    return auth
+
+
+@org_router.get("/me", response_model=SuccessResponse[OrgUsageDetail], summary="Usage and cost of the caller's own organization")
+async def my_usage(
+    day_from: str | None = Query(None, alias="from", description="First UTC day, YYYY-MM-DD."),
+    day_to: str | None = Query(None, alias="to", description="Last UTC day (inclusive), YYYY-MM-DD."),
+    include_test: bool = Query(False, description="Include calls made from the builder's Test call."),
+    auth: AuthContext = Depends(require_org_admin),
+) -> dict:
+    """Same breakdown as `/admin/usage/organizations/{org_id}`, but the organization is always the
+    caller's own — there is no id to pass, so an Admin can never read another organization.
+    Cost uses the prices a Super Admin maintains.
+
+    **Auth:** organization Admin only (`FORBIDDEN` for Developers, QA, and Super Admins)."""
+    return success_response(data=await service.org_detail(auth.organization_id, _day(day_from, "from"), _day(day_to, "to"), include_test))
