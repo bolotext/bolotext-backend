@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     livekit_url: str | None = None
     livekit_api_key: str | None = None
     livekit_api_secret: str | None = None
+    # Telephony: the project's SIP URI (the provider's *origination* target).
+    livekit_sip_uri: str | None = None
 
 
 @lru_cache

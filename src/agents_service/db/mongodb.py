@@ -7,6 +7,7 @@ from agents_service.agents.model import Agent
 from agents_service.call_logs.model import CallLog
 from agents_service.core.config import get_settings
 from agents_service.prompt.version_model import SystemPromptVersion
+from agents_service.telephony.model import TelephonyConnection
 from agents_service.usage.model import ModelPrice, UsageRollup, UsageSettings
 from agents_service.whatsapp.model import (
     WhatsAppAgent,
@@ -51,6 +52,7 @@ async def init_db(client: AsyncIOMotorClient | None = None) -> None:
             UsageRollup,
             ModelPrice,
             UsageSettings,
+            TelephonyConnection,
             SystemPromptVersion,
             AgentAssignment,
             CallLog,

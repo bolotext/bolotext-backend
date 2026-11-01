@@ -91,7 +91,9 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=error_response(
                 code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 message="Request validation failed",
-                errors={"type": "VALIDATION_ERROR", "fields": exc.errors()},
+                # `ctx` can hold the exception a custom validator raised, which is not JSON-serializable
+                # (and `msg` already carries its text), so drop it instead of turning a 422 into a 500.
+                errors={"type": "VALIDATION_ERROR", "fields": [{k: v for k, v in e.items() if k != "ctx"} for e in exc.errors()]},
             ),
         )
 

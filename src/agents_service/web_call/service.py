@@ -89,7 +89,9 @@ async def create_builder_token(agent_id: PydanticObjectId, auth: AuthContext, en
         agent_id=str(agent.id),
         environment=environment,
         time_zone=time_zone,
-        test=True,
+        # A call on the Production config is a real call even when placed from the builder; only Development/Stage
+        # calls are tests (this flag decides whether the usage dashboard counts them by default).
+        test=environment != "production",
         custom_variables=custom_variables,
         display_name=f"user-{auth.user_id}",
     )
