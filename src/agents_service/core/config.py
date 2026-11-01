@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     host: str = "0.0.0.0"  # noqa: S104 - intentional: this is a container-facing service, not a laptop-only tool
-    port: int = 8002
+    port: int = 8000
     # Ignored outside production (reload mode is always single-process).
     workers: int = 1
 
@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     whatsapp_max_csv_rows: int = 5000
     whatsapp_send_concurrency: int = 5
     whatsapp_send_delay_ms: int = 100
+
+    # LiveKit — used to mint web-call tokens (same project the voice agent worker connects to).
+    livekit_url: str | None = None
+    livekit_api_key: str | None = None
+    livekit_api_secret: str | None = None
 
 
 @lru_cache
