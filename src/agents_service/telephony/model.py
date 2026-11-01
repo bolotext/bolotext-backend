@@ -32,3 +32,21 @@ class TelephonyConnection(Document):
     class Settings:
         name = "telephony_connections"
         indexes = [IndexModel("agent_id", unique=True), IndexModel("org_id")]
+
+
+class RentedNumber(Document):
+    """A phone number rented from LiveKit Phone Numbers through this app. LiveKit holds the number; this remembers which
+    organization rented it and which agent answers it, so an Admin only ever sees and changes their own."""
+
+    livekit_id: str  # LiveKit's phone-number id
+    phone_number: str  # E.164
+    org_id: str | None = None  # None until a Super Admin connects an unclaimed number to an agent
+    agent_id: str | None = None
+    dispatch_rule_id: str | None = None  # the rule we created for it (removed when the number is released/disconnected)
+    created_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "rented_numbers"
+        indexes = [IndexModel("livekit_id", unique=True), IndexModel("phone_number", unique=True), IndexModel("org_id")]

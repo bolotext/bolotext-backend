@@ -161,3 +161,48 @@ class TrunkUpdate(BaseModel):
 
     _host = field_validator("address")(lambda cls, v: _clean_host(v) if v else v)
     _nums = field_validator("numbers")(lambda cls, v: _clean_numbers(v) if v is not None else v)
+
+
+# ---- Rent a number (LiveKit Phone Numbers) ---------------------------------
+
+
+class NumberSearchResult(BaseModel):
+    phone_number: str
+    country_code: str | None = None
+    area_code: str | None = None
+    number_type: str = Field("unknown", description="local, toll_free, mobile or unknown")
+    locality: str | None = None
+    region: str | None = None
+    capabilities: list[str] = []
+
+
+class RentNumber(BaseModel):
+    phone_number: str = Field(description="A number from the search results, E.164.")
+    agent_id: str | None = Field(None, description="Connect the new number to this agent right away.")
+    billing_confirmed: bool = Field(description="The caller understands LiveKit bills this number (including the full month if released early).")
+
+    _num = field_validator("phone_number")(lambda cls, v: _clean_numbers([v])[0])
+
+
+class AssignNumber(BaseModel):
+    agent_id: str | None = Field(None, description="The agent that answers calls to the number; null disconnects it.")
+
+
+class RentedNumberOut(BaseModel):
+    id: str = Field(description="LiveKit's phone-number id.")
+    phone_number: str
+    number_type: str = "unknown"
+    locality: str | None = None
+    region: str | None = None
+    status: str = "unknown"
+    agent_id: str | None = None
+    org_id: str | None = None
+    org_name: str | None = None
+    external: bool = Field(False, description="Already existed in LiveKit (rented outside this app); only a Super Admin sees it. Connecting it to an agent hands it to that agent's organization.")
+    dispatch_rule_ids: list[str] = Field([], description="LiveKit dispatch rules the number is currently tied to (including ones made outside this app).")
+    warning: str | None = None
+
+
+class RentedNumberList(BaseModel):
+    items: list[RentedNumberOut]
+    limit_per_org: int | None = Field(None, description="Numbers an organization may hold; None for a Super Admin.")

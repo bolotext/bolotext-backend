@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     livekit_api_secret: str | None = None
     # Telephony: the project's SIP URI (the provider's *origination* target).
     livekit_sip_uri: str | None = None
+    # Rented LiveKit numbers are billed to the project, so an organization's Admin may hold only a few (Super Admins: no cap).
+    phone_numbers_max_per_org: int = 3
 
 
 @lru_cache

@@ -5,13 +5,19 @@ from common.enums import Role
 from common.errors import ForbiddenError
 from common.responses import success_response
 from common.schemas import SuccessResponse
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from agents_service.core.deps import AuthContext, get_current_auth
+from agents_service.telephony import numbers as phone_numbers
 from agents_service.telephony import service
 from agents_service.telephony.schema import (
+    AssignNumber,
     AvailableTrunk,
     EnableInbound,
+    NumberSearchResult,
+    RentedNumberList,
+    RentedNumberOut,
+    RentNumber,
     RawTrunk,
     TelephonyCall,
     TelephonyCallOut,
@@ -26,6 +32,7 @@ from agents_service.telephony.schema import (
 
 router = APIRouter(prefix="/agents", tags=["agents:telephony"])
 admin_router = APIRouter(prefix="/admin/telephony", tags=["admin:telephony"])
+numbers_router = APIRouter(prefix="/telephony/numbers", tags=["telephony:numbers"])
 
 _AGENT_ID = Path(description="The agent's id.")
 
@@ -149,3 +156,48 @@ async def put_trunk_raw(kind: Literal["outbound", "inbound"], trunk_id: str, pay
 async def delete_trunk(kind: Literal["outbound", "inbound", "dispatch-rule"], trunk_id: str, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
     await service.delete_trunk(kind, trunk_id, auth)
     return success_response(message="Deleted", data={"id": trunk_id})
+
+
+# ----------------------------------------------- Rent a number (LiveKit Phone Numbers)
+
+
+@numbers_router.get("/search", response_model=SuccessResponse[list[NumberSearchResult]], summary="Search LiveKit numbers available to rent")
+async def search_numbers(
+    area_code: str | None = Query(None, pattern=r"^\d{3}$", description="US area code, e.g. 415 (or 800/833/888 for toll-free)."),
+    country_code: Literal["US"] = Query("US", description="Only US numbers are available."),
+    limit: int = Query(20, ge=1, le=50),
+    _: AuthContext = Depends(require_telephony_manager),
+) -> dict:
+    """Free to call: nothing is rented until `POST /telephony/numbers`. **Auth:** Super Admin or organization Admin."""
+    return success_response(data=await phone_numbers.search(country_code, area_code, limit))
+
+
+@numbers_router.get("", response_model=SuccessResponse[RentedNumberList], summary="Rented numbers you can manage")
+async def list_numbers(auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    """A Super Admin sees every rented number; an organization Admin only their own organization's."""
+    return success_response(data=await phone_numbers.list_numbers(auth))
+
+
+@numbers_router.post("", response_model=SuccessResponse[RentedNumberOut], summary="Rent a number (billed by LiveKit)")
+async def rent_number(payload: RentNumber, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    """Rents the number and, if `agent_id` is given, connects it to that agent's Production config for inbound calls.
+    No SIP trunk, username or password is needed. LiveKit numbers are US-only and inbound-only.
+    **Costs money:** `billing_confirmed` must be true. An Admin may hold a limited number per organization.
+    **Errors:** `CONFLICT` (already rented), `BAD_REQUEST` (limit reached, agent not promoted, LiveKit refused)."""
+    if not payload.billing_confirmed:
+        raise ForbiddenError("Confirm that you understand this number is billed")
+    return success_response(code=201, message="Number rented", data=await phone_numbers.rent(auth, payload.phone_number, payload.agent_id))
+
+
+@numbers_router.put("/{number_id}/agent", response_model=SuccessResponse[RentedNumberOut], summary="Connect a rented number to an agent")
+async def assign_number(number_id: str, payload: AssignNumber, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    """Sets (or with `agent_id: null` clears) the agent that answers calls to the number. The agent must be in the same
+    organization and have a Production config."""
+    return success_response(message="Number updated", data=await phone_numbers.assign(auth, number_id, payload.agent_id))
+
+
+@numbers_router.delete("/{number_id}", response_model=SuccessResponse[dict], summary="Release a rented number")
+async def release_number(number_id: str, auth: AuthContext = Depends(require_telephony_manager)) -> dict:
+    """Gives the number back to LiveKit. It is still billed for the rest of the month."""
+    await phone_numbers.release(auth, number_id)
+    return success_response(message="Number released", data={"id": number_id})
