@@ -53,7 +53,7 @@ from agents_service.whatsapp.schema import (
     WhatsAppAgentUpdate,
     WhatsAppConfigOut,
 )
-from agents_service.whatsapp.twilio_client import TwilioClient, TwilioConfig, TwilioError, callback_url
+from agents_service.whatsapp.twilio_client import TwilioClient, TwilioConfig, TwilioError
 
 logger = setup_logger(__name__)
 
@@ -960,7 +960,7 @@ async def bulk_delete_contacts(agent_id: str, auth: AuthContext, contact_ids: li
 
 # ---------------------------------------------------------------- sending
 async def start_send(
-    agent_id: str, auth: AuthContext, payload: SendRequest, public_base: str | None = None
+    agent_id: str, auth: AuthContext, payload: SendRequest
 ) -> SendResult:
     agent = await get_agent(agent_id, auth, write=True)
     if not payload.consent_confirmed:
@@ -1015,7 +1015,7 @@ async def start_send(
     ids = [str(c.id) for c in claimed]
     if ids:
         task = asyncio.create_task(
-            _run_send_job(job_id, str(agent.id), template and str(template.id), ids, callback_url(public_base))
+            _run_send_job(job_id, str(agent.id), template and str(template.id), ids)
         )
         _jobs.add(task)
         task.add_done_callback(_jobs.discard)
@@ -1051,7 +1051,7 @@ def _render(body: str, c: WhatsAppContact) -> str:
 
 
 async def _send_one(
-    client: TwilioClient, agent: WhatsAppAgent, template: WhatsAppTemplate | None, c: WhatsAppContact, callback: str | None
+    client: TwilioClient, agent: WhatsAppAgent, template: WhatsAppTemplate | None, c: WhatsAppContact
 ) -> None:
     sms = agent.channel == "sms"
     sender = agent.twilio_sender or (client.config.sms_from if sms else client.config.whatsapp_from)
@@ -1061,7 +1061,7 @@ async def _send_one(
             if not text.strip():
                 raise TwilioError("This contact has no message text; pick a template or add a message")
             sid = await client.send_message(
-                to=f"+{c.phone_number}", sender=sender, body=text, status_callback=callback, channel="sms"
+                to=f"+{c.phone_number}", sender=sender, body=text, channel="sms"
             )
         elif template:
             # A template without placeholders must not carry ContentVariables (Twilio rejects "{}").
@@ -1072,13 +1072,13 @@ async def _send_one(
             )
             sid = await client.send_message(
                 to=f"+{c.phone_number}", sender=sender, content_sid=template.twilio_content_sid,
-                content_variables=variables, status_callback=callback,
+                content_variables=variables,
             )  # fmt: skip
         else:
             if not c.message:
                 raise TwilioError("This contact has no message text; pick a template or add a message")
             sid = await client.send_message(
-                to=f"+{c.phone_number}", sender=sender, body=c.message, status_callback=callback
+                to=f"+{c.phone_number}", sender=sender, body=c.message
             )
         c.send_status, c.twilio_message_sid, c.error, c.sent_at = "sent", sid, None, _now()
         await _record_event(c, "simulated" if client.dry_run else "queued", "send", {"MessageSid": sid})
@@ -1094,7 +1094,7 @@ async def _send_one(
 
 
 async def _run_send_job(
-    job_id: str, agent_id: str, template_id: str | None, contact_ids: list[str], callback: str | None
+    job_id: str, agent_id: str, template_id: str | None, contact_ids: list[str]
 ) -> None:
     settings = get_settings()
     try:
@@ -1110,7 +1110,7 @@ async def _run_send_job(
                 # Deleted or re-claimed by a newer job while we waited.
                 if c is None or c.send_job_id != job_id or c.send_status != "queued":
                     return
-                await _send_one(client, agent, template, c, callback)  # type: ignore[arg-type]
+                await _send_one(client, agent, template, c)  # type: ignore[arg-type]
                 await asyncio.sleep(delay)
 
         await asyncio.gather(*(work(i) for i in contact_ids))
@@ -1157,7 +1157,7 @@ async def _record_event(c: WhatsAppContact, status: str, source: str, payload: d
         c.twilio_error_code, c.twilio_error_message = code, message
 
 
-async def apply_status_callback(c: WhatsAppContact, params: dict[str, str], source: str = "webhook") -> bool:
+async def apply_status_callback(c: WhatsAppContact, params: dict[str, str], source: str = "refresh") -> bool:
     raw = (params.get("MessageStatus") or params.get("SmsStatus") or "").lower()
     new = _TWILIO_STATUS_MAP.get(raw)
     if not new:
@@ -1185,7 +1185,7 @@ _REFRESH_LIMIT = 100
 
 async def refresh_message_status(agent_id: str, auth: AuthContext, payload: RefreshRequest) -> RefreshResult:
     """Ask Twilio for the current status of messages that are still in flight (or the
-    given contacts) and store anything new — for when callbacks can't reach us.
+    given contacts) and store anything new (no webhook; this is the only status source).
     """
     agent = await get_agent(agent_id, auth)
     query: dict = {"whatsapp_agent_id": str(agent.id), "twilio_message_sid": {"$ne": None}}

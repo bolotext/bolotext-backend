@@ -4,9 +4,6 @@ In dry-run mode nothing leaves the process: calls are simulated.
 """
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import re
 import uuid
 from dataclasses import dataclass
@@ -32,21 +29,6 @@ class TwilioError(Exception):
         self.retryable = retryable
 
 
-STATUS_CALLBACK_PATH = "/api/v1/whatsapp/twilio/status-callback"
-
-
-def callback_url(public_base: str | None) -> str | None:
-    """Twilio's status-callback URL, or None when it can't be reached from the
-    internet (no known base, or localhost) — then delivery stays at `sent`.
-    """
-    if not public_base:
-        return None
-    host = public_base.split("://", 1)[-1].split("/", 1)[0].rsplit("@", 1)[-1]
-    if host.split(":")[0] in {"localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"}:  # noqa: S104
-        return None
-    return public_base.rstrip("/") + STATUS_CALLBACK_PATH
-
-
 def whatsapp_address(number: str) -> str:
     number = number.strip()
     return number if number.startswith("whatsapp:") else f"whatsapp:{number}"
@@ -69,17 +51,6 @@ class TwilioConfig:
     def simulated(self) -> bool:
         """True when nothing will reach Twilio: dry-run, or credentials missing."""
         return self.dry_run or not (self.account_sid and self.auth_token)
-
-
-def compute_signature(auth_token: str, url: str, params: dict[str, str]) -> str:
-    """Twilio's X-Twilio-Signature: base64(HMAC-SHA1(token, url + sorted k+v))."""
-    payload = url + "".join(f"{k}{params[k]}" for k in sorted(params))
-    digest = hmac.new(auth_token.encode(), payload.encode(), hashlib.sha1).digest()
-    return base64.b64encode(digest).decode()
-
-
-def verify_signature(auth_token: str, url: str, params: dict[str, str], signature: str) -> bool:
-    return hmac.compare_digest(compute_signature(auth_token, url, params), signature or "")
 
 
 class TwilioClient:
@@ -149,7 +120,6 @@ class TwilioClient:
         body: str | None = None,
         content_sid: str | None = None,
         content_variables: str | None = None,
-        status_callback: str | None = None,
         channel: str = "whatsapp",
     ) -> str:
         """Returns the Twilio message SID. `channel="sms"` sends plain text from an
@@ -160,8 +130,6 @@ class TwilioClient:
         if channel == "sms":
             data = {"To": to.removeprefix("whatsapp:"), "Body": body or ""}
             data["MessagingServiceSid" if sender.upper().startswith("MG") else "From"] = sender.removeprefix("whatsapp:")
-            if status_callback:
-                data["StatusCallback"] = status_callback
             res = await self._request("POST", _MESSAGES_URL.format(sid=self.config.account_sid), data=data)
             return str(res["sid"])
         data = {"From": whatsapp_address(sender), "To": whatsapp_address(to)}
@@ -171,8 +139,6 @@ class TwilioClient:
                 data["ContentVariables"] = content_variables
         else:
             data["Body"] = body or ""
-        if status_callback:
-            data["StatusCallback"] = status_callback
         res = await self._request("POST", _MESSAGES_URL.format(sid=self.config.account_sid), data=data)
         return str(res["sid"])
 

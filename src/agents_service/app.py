@@ -31,7 +31,7 @@ from agents_service.prompt.router import router as prompt_router
 from agents_service.providers.router import router as providers_router
 from agents_service.transcriber.router import router as transcriber_router
 from agents_service.voice_persona.router import router as voice_persona_router
-from agents_service.whatsapp.router import router as whatsapp_router, status_router as whatsapp_status_router
+from agents_service.whatsapp.router import router as whatsapp_router
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
@@ -136,7 +136,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(mcp_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(providers_router, prefix=api_v1, dependencies=voice_env)
     app.include_router(whatsapp_router, prefix=api_v1)
-    app.include_router(whatsapp_status_router, prefix=api_v1)
 
 
 def create_app() -> FastAPI:

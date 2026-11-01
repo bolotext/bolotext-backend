@@ -1,6 +1,4 @@
-from urllib.parse import parse_qsl
 
-from common.errors import ForbiddenError
 from common.log_utils import setup_logger
 from common.responses import success_response
 from common.schemas import SuccessResponse
@@ -38,16 +36,10 @@ from agents_service.whatsapp.schema import (
     WhatsAppAgentUpdate,
     WhatsAppConfigOut,
 )
-from agents_service.whatsapp.twilio_client import STATUS_CALLBACK_PATH, verify_signature
 
 logger = setup_logger(__name__)
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
-
-
-def _public_base(request: Request) -> str | None:
-    """The public URL the API gateway was reached on (set by the gateway)."""
-    return request.headers.get("X-Public-Base-Url") or None
 
 
 @router.get("/config", response_model=SuccessResponse[WhatsAppConfigOut], summary="WhatsApp messaging configuration")
@@ -73,7 +65,7 @@ async def get_settings_route(auth: AuthContext = Depends(get_current_auth)) -> d
 @router.put("/settings", response_model=SuccessResponse[SettingsOut], summary="Update the organization's Twilio settings")
 async def update_settings(payload: SettingsUpdate, auth: AuthContext = Depends(get_current_auth)) -> dict:
     """Partial update of the organization's Twilio settings (Account SID, auth
-    token, default sender, dry-run, default country code, webhook base URL).
+    token, default sender, dry-run, default country code).
     The auth token is stored encrypted and can be replaced but never read back.
 
     **Auth:** bearer JWT; Admin (or Super Admin) of the selected organization.
@@ -394,7 +386,7 @@ async def list_message_status(
 async def refresh_message_status(agent_id: str, payload: RefreshRequest | None = None, auth: AuthContext = Depends(get_current_auth)) -> dict:
     """Asks Twilio for the current status of messages still in flight (or of the
     given `contact_ids`) and stores any change, with the full Twilio response, as a
-    new event. Use it when status callbacks can't reach the platform. At most 100
+    new event. This is how delivery statuses get stored (no webhook). At most 100
     messages per call; simulated (dry-run) messages are skipped.
 
     **Auth:** bearer JWT required.
@@ -482,12 +474,11 @@ async def send_messages(
     """Queues messages to the selected contacts (`contact_ids`) or a whole
     upload (`batch_id`) and returns immediately; delivery runs in the
     background with rate limiting, and each contact's `send_status` is updated
-    as it goes (poll `GET .../contacts`, or Twilio's status callback refines it
-    to delivered/read/failed). With `template_id` (must be approved) the
+    as it goes (poll `GET .../contacts`; call `POST .../messages/refresh` to pull
+    delivered/read/failed from Twilio). With `template_id` (must be approved) the
     template is sent; without it each contact's `message` is sent as free text,
     which WhatsApp only delivers inside the 24-hour customer-service window.
-    The delivery-status callback URL is derived from the gateway's public URL
-    (`X-Public-Base-Url`), so nothing needs configuring. Contacts already queued/sent/delivered or opted out are skipped, so a
+    Contacts already queued/sent/delivered or opted out are skipped, so a
     repeat click never double-sends. In dry-run mode nothing reaches Twilio.
 
     **Auth:** bearer JWT required.
@@ -499,37 +490,5 @@ async def send_messages(
     - `NOT_FOUND` — no such WhatsApp agent/resource in the caller's organization.
     - `FORBIDDEN` — QA role is view-only.
     """
-    res = await service.start_send(agent_id, auth, payload, _public_base(request))
+    res = await service.start_send(agent_id, auth, payload)
     return success_response(code=202 if res.queued else 200, message=f"Queued {res.queued} messages", data=res)
-
-
-# ---------------------------------------------------------------- webhook
-status_router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
-
-
-@status_router.post("/twilio/status-callback", response_model=SuccessResponse[None], summary="Twilio delivery-status webhook")
-async def twilio_status_callback(request: Request) -> dict:
-    """Public endpoint called by Twilio (form-encoded) as a message moves to
-    sent / delivered / read / failed. Authenticated by the `X-Twilio-Signature`
-    HMAC, verified with the auth token of the organization that owns the
-    message — not a bearer token. Unknown message SIDs are acknowledged and
-    ignored.
-
-    **Errors:**
-    - `FORBIDDEN` — signature missing/invalid, or the organization's credentials are incomplete.
-    """
-    params = dict(parse_qsl((await request.body()).decode(), keep_blank_values=True))
-    contact = await service.find_contact_by_sid(params)
-    if contact is None:
-        return success_response()
-    cfg = await service.load_config(contact.org_id)
-    if not cfg.simulated:
-        base = _public_base(request)
-        url = base + STATUS_CALLBACK_PATH if base else str(request.url)
-        if not verify_signature(cfg.auth_token, url, params, request.headers.get("X-Twilio-Signature", "")):
-            logger.warning("rejected Twilio status callback with a bad signature (org=%s)", contact.org_id)
-            raise ForbiddenError("Invalid Twilio signature")
-    elif not cfg.dry_run:
-        raise ForbiddenError("Twilio credentials are not configured")
-    await service.apply_status_callback(contact, params)
-    return success_response()

@@ -14,8 +14,6 @@ from common.errors import register_exception_handlers  # noqa: E402
 from common.responses import success_response  # noqa: E402
 from common.schemas import SuccessResponse  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
-from starlette.datastructures import Headers  # noqa: E402
-from starlette.types import ASGIApp, Receive, Scope, Send  # noqa: E402
 
 from agents_service.app import API_DESCRIPTION as AGENTS_DESCRIPTION  # noqa: E402
 from agents_service.app import TAGS_METADATA as AGENTS_TAGS  # noqa: E402
@@ -48,37 +46,6 @@ liveness check.
 {AGENTS_DESCRIPTION}
 """
 
-PUBLIC_BASE_URL_HEADER = b"x-public-base-url"
-
-
-def _public_base_url(scope: Scope) -> str:
-    """The URL clients (and e.g. Twilio) use to reach this service: the pinned
-    `PUBLIC_URL` if set, else the forwarded/Host header of this request.
-    """
-    if settings.public_url:
-        return settings.public_url.rstrip("/")
-    headers = Headers(scope=scope)
-    scheme = headers.get("x-forwarded-proto", scope["scheme"]).split(",")[0].strip()
-    host = headers.get("x-forwarded-host", headers.get("host", "")).split(",")[0].strip()
-    return f"{scheme}://{host}"
-
-
-class PublicBaseUrlMiddleware:
-    """Sets `X-Public-Base-Url` on every request (read by the WhatsApp routes), as the
-    API gateway used to — always overwritten, so a client-supplied value is never trusted.
-    """
-
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            headers = [(k, v) for k, v in scope["headers"] if k.lower() != PUBLIC_BASE_URL_HEADER]
-            headers.append((PUBLIC_BASE_URL_HEADER, _public_base_url(scope).encode()))
-            scope["headers"] = headers
-        await self.app(scope, receive, send)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Seeding is a separate, explicit step (`python src/main.py seed`), not part of boot.
@@ -97,7 +64,6 @@ def create_app() -> FastAPI:
         openapi_tags=[{"name": "health", "description": "Service liveness check."}, *USERS_TAGS[1:], *AGENTS_TAGS[1:]],
         lifespan=lifespan,
     )
-    app.add_middleware(PublicBaseUrlMiddleware)
     register_exception_handlers(app)
     register_users_routes(app)
     register_agents_routes(app)
