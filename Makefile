@@ -29,12 +29,13 @@ run-frontend:
 	@echo 'Running the frontend dev server from $(FRONTEND_DIR)'
 	cd $(FRONTEND_DIR) && npm run dev
 
-# Backend + frontend together; Ctrl+C stops both.
+# Backend + frontend + agent together; Ctrl+C stops all three.
 runall:
-	@echo 'Running the backend and the frontend (Ctrl+C stops both)'
+	@echo 'Running the backend, the frontend and the agent (Ctrl+C stops all)'
 	@trap 'kill $$(jobs -p) 2>/dev/null' INT TERM EXIT; \
 	$(MAKE) run & \
 	$(MAKE) run-frontend & \
+	$(MAKE) run-agent & \
 	wait
 
 # Agent runtime lives in the sibling repo; override with AGENT_DIR=... if elsewhere.
