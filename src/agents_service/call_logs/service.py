@@ -8,9 +8,9 @@ from common.log_utils import setup_logger
 from agents_service.agents import service as agent_service
 from agents_service.agents.model import Agent
 from agents_service.call_logs.model import CallLog
-from agents_service.call_logs.schema import CallLogListOut, CallLogOut, CallLogStored, CallLogSummary
-from agents_service.core.deps import AuthContext
 from agents_service.usage import service as usage_service
+from agents_service.call_logs.schema import CallUsageIn, CallLogIn, CallLogListOut, CallLogOut, CallLogStored, CallLogSummary
+from agents_service.core.deps import AuthContext
 
 logger = setup_logger(__name__)
 
@@ -26,14 +26,15 @@ def _seconds(duration: object) -> int | None:
     return h * 3600 + mins * 60 + secs
 
 
-def _started_at(details: dict, journey: list) -> datetime | None:
-    """The runtime's `start_at` is in its server's local time with no zone, so the
-    epoch stamps on the journey are the reliable clock; fall back to `start_at` as UTC."""
-    stamps = [i["created_at"] for i in journey if isinstance(i, dict) and isinstance(i.get("created_at"), (int, float))]
+def started_at(doc: dict) -> datetime | None:
+    """The runtime's `callStartTime` is in its server's local time with no zone, so the
+    epoch stamps on the conversation log are the reliable clock; fall back to it as UTC."""
+    log = doc.get("conversation_log") if isinstance(doc.get("conversation_log"), list) else []
+    stamps = [i["created_at"] for i in log if isinstance(i, dict) and isinstance(i.get("created_at"), (int, float))]
     if stamps:
         return datetime.fromtimestamp(min(stamps), timezone.utc)
     try:
-        return datetime.strptime(str(details.get("start_at")), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(str(doc.get("callStartTime")), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 
@@ -42,73 +43,66 @@ def _text(v: object) -> str | None:
     return None if v is None or v == "" else str(v)
 
 
+def _lower(v: object) -> str | None:
+    t = _text(v)
+    return t.lower() if t else None
+
+
 def summary(c: CallLog) -> CallLogSummary:
+    """The list-row view, derived from the stored document on read."""
+    d = c.model_dump()
+    log = d.get("conversation_log") if isinstance(d.get("conversation_log"), list) else []
+    hangup = d.get("hangup_reason")
     return CallLogSummary(
-        id=str(c.id), agent_id=c.agent_id, session_id=c.session_id, source=c.source, direction=c.direction,
-        status=c.status, test=c.test, duration=c.duration, duration_seconds=c.duration_seconds,
-        started_at=c.started_at, from_phone=c.from_phone, to_phone=c.to_phone, web_uuid=c.web_uuid,
-        recording_sid=c.recording_sid, hangup_reason=c.hangup_reason, messages=c.messages, created_at=c.created_at,
+        id=str(c.id), agent_id=c.bot_id, session_id=c.conversation_id, source=_text(d.get("source")),
+        direction=_lower(d.get("callType")), status=_lower(d.get("call_status")), test=bool(d.get("is_test")),
+        duration=_text(d.get("duration")), duration_seconds=_seconds(d.get("duration")), started_at=started_at(d),
+        from_phone=_text(d.get("from_phone")), to_phone=_text(d.get("to_phone")), web_uuid=_text(d.get("web_uuid")),
+        recording_sid=_text(d.get("recording_sid")),
+        hangup_reason=_text(hangup.get("end_reason") if isinstance(hangup, dict) else hangup),
+        messages=sum(1 for i in log if isinstance(i, dict) and i.get("type") == "message"),
+        created_at=c.created_at,
     )  # fmt: skip
 
 
-async def ingest(agent_id: str, call_payload: dict) -> CallLogStored:
-    """Stores (or, for a retried session, updates) the call log the voice runtime posted."""
-    if not PydanticObjectId.is_valid(agent_id):
+async def ingest(payload: CallLogIn) -> CallLogStored:
+    """Stores (or, for a retried conversation, replaces) the call log the voice runtime posted.
+    The document is saved as received; the only thing added is the agent's `org_id` for tenant scoping."""
+    if not PydanticObjectId.is_valid(payload.bot_id):
         raise NotFoundError("Agent not found")
-    agent = await Agent.get(PydanticObjectId(agent_id))
+    agent = await Agent.get(PydanticObjectId(payload.bot_id))
     if agent is None:
         raise NotFoundError("Agent not found")
-    interaction = call_payload.get("interaction")
-    if not isinstance(interaction, dict):
-        raise UnprocessableEntityError("call_payload.interaction is required and must be an object")
-    details = interaction.get("details") if isinstance(interaction.get("details"), dict) else {}
-    journey = interaction.get("interaction_journey") if isinstance(interaction.get("interaction_journey"), list) else []
-    hangup = details.get("hangup_reason")
-    fields = {
-        "org_id": agent.org_id,
-        "session_id": _text(details.get("session_id")),
-        "source": _text(interaction.get("source")),
-        "direction": _text(interaction.get("direction")),
-        "status": _text(interaction.get("status")),
-        "test": bool(interaction.get("test")),
-        "duration": _text(details.get("duration")),
-        "duration_seconds": _seconds(details.get("duration")),
-        "started_at": _started_at(details, journey),
-        "from_phone": _text(details.get("from_phone")),
-        "to_phone": _text(details.get("to_phone")),
-        "web_uuid": _text(details.get("web_uuid")),
-        "recording_sid": _text(details.get("recording_sid")),
-        "hangup_reason": _text(hangup.get("end_reason") if isinstance(hangup, dict) else hangup),
-        "messages": sum(1 for i in journey if isinstance(i, dict) and i.get("type") == "message"),
-        "interaction": interaction,
-    }
+    fields = {k: v for k, v in payload.model_dump().items() if k not in ("_id", "id", "org_id")}  # ids are ours to assign
     existing = (
-        await CallLog.find_one(CallLog.agent_id == agent_id, CallLog.session_id == fields["session_id"])
-        if fields["session_id"]
+        await CallLog.find_one(CallLog.bot_id == payload.bot_id, CallLog.conversation_id == payload.conversation_id)
+        if payload.conversation_id
         else None
     )
-    old_interaction, old_when = (existing.interaction, existing.started_at or existing.created_at) if existing is not None else (None, None)
     if existing is not None:
-        for k, v in fields.items():
+        for k, v in {**fields, "org_id": agent.org_id}.items():
             setattr(existing, k, v)
         existing.updated_at = datetime.now(timezone.utc)
         await existing.save()
         log, created = existing, False
     else:
-        log = CallLog(agent_id=agent_id, **fields)
+        log = CallLog(org_id=agent.org_id, **fields)
         await log.insert()
         created = True
-    # Keep the usage rollup (token_usage collection) in step with the stored call.
-    await usage_service.record_call(
-        org_id=agent.org_id,
-        agent_id=agent_id,
-        new=interaction,
-        new_when=fields["started_at"] or log.created_at,
-        old=old_interaction,
-        old_when=old_when,
-    )
-    logger.info("call log stored: agent=%s session=%s id=%s created=%s", agent_id, log.session_id, log.id, created)
-    return CallLogStored(id=str(log.id), agent_id=agent_id, session_id=log.session_id, created=created)
+    logger.info("call log stored: agent=%s conversation=%s id=%s created=%s", log.bot_id, log.conversation_id, log.id, created)
+    return CallLogStored(id=str(log.id), agent_id=log.bot_id, session_id=log.conversation_id, created=created)
+
+
+async def record_usage(payload: CallUsageIn) -> None:
+    """Adds one call to the usage rollup. Triggered by the voice runtime, not by log ingest."""
+    if not PydanticObjectId.is_valid(payload.bot_id):
+        raise NotFoundError("Agent not found")
+    agent = await Agent.get(PydanticObjectId(payload.bot_id))
+    if agent is None:
+        raise NotFoundError("Agent not found")
+    when = datetime.strptime(payload.day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    doc = {"token_usage": payload.token_usage, "models": payload.models, "environment": payload.environment, "is_test": payload.is_test}
+    await usage_service.apply(await usage_service.contributions(agent.org_id, payload.bot_id, doc, when), 1)
 
 
 async def list_logs(
@@ -116,19 +110,19 @@ async def list_logs(
     test: bool | None, skip: int, limit: int,
 ) -> CallLogListOut:  # fmt: skip
     agent = await agent_service.get_owned_agent(agent_id, auth, write=False)
-    query: dict = {"agent_id": str(agent.id)}
+    query: dict = {"bot_id": str(agent.id)}
     if status:
-        query["status"] = status
+        query["call_status"] = status.upper()
     if source:
         query["source"] = source
     if test is not None:
-        query["test"] = test
+        query["is_test"] = test
     if q and q.strip():
         rx = {"$regex": re.escape(q.strip()), "$options": "i"}
-        query["$or"] = [{"session_id": rx}, {"from_phone": rx}, {"to_phone": rx}, {"web_uuid": rx}]
+        query["$or"] = [{"conversation_id": rx}, {"from_phone": rx}, {"to_phone": rx}, {"web_uuid": rx}]
     total = await CallLog.find(query).count()
-    # Newest first; the journey (large) is part of `interaction`, so list rows are built without exposing it.
-    rows = await CallLog.find(query).sort("-started_at", "-created_at").skip(skip).limit(limit).to_list()
+    # Newest first; the conversation (large) is only in the stored document, so list rows never expose it.
+    rows = await CallLog.find(query).sort("-callStartTime", "-created_at").skip(skip).limit(limit).to_list()
     return CallLogListOut(items=[summary(c) for c in rows], total=total)
 
 
@@ -137,7 +131,7 @@ async def get_log(agent_id: PydanticObjectId, log_id: str, auth: AuthContext) ->
     if not PydanticObjectId.is_valid(log_id):
         raise NotFoundError("Call log not found")
     c = await CallLog.get(PydanticObjectId(log_id))
-    if c is None or c.agent_id != str(agent.id):
+    if c is None or c.bot_id != str(agent.id):
         raise NotFoundError("Call log not found")
-    return CallLogOut(**summary(c).model_dump(), interaction=c.interaction)
+    return CallLogOut(**summary(c).model_dump(), log=c.model_dump(mode="json", exclude={"id", "revision_id"}))
 

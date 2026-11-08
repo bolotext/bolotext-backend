@@ -36,18 +36,18 @@ def _int(v: object) -> int:
     return int(v) if isinstance(v, (int, float)) and v > 0 else 0
 
 
-async def _models(agent_id: str, interaction: dict) -> dict[str, tuple[str, str]]:
+async def _models(agent_id: str, doc: dict) -> dict[str, tuple[str, str]]:
     """provider/model per kind. The voice runtime reports what it actually ran
-    (`interaction.models`); older runtimes don't, so fall back to the agent's
+    (`models`); the current runtime doesn't, so fall back to the agent's
     saved config for the call's environment."""
-    reported = interaction.get("models") if isinstance(interaction.get("models"), dict) else {}
+    reported = doc.get("models") if isinstance(doc.get("models"), dict) else {}
     out: dict[str, tuple[str, str]] = {}
     missing = [k for k in KINDS if not (isinstance(reported.get(k), dict) and reported[k].get("provider_id"))]
     for k in KINDS:
         if k not in missing:
             out[k] = (str(reported[k]["provider_id"]), str(reported[k].get("model_id") or "unknown"))
     if missing and PydanticObjectId.is_valid(agent_id):
-        env = interaction.get("environment") or ("development" if interaction.get("test") else "production")
+        env = doc.get("environment") or ("development" if doc.get("is_test") else "production")
         config = await config_repo.get_by_agent_id(PydanticObjectId(agent_id), env if env in ("development", "stage", "production") else "production")
         if config is not None:
             fallback = {
@@ -63,11 +63,11 @@ async def _models(agent_id: str, interaction: dict) -> dict[str, tuple[str, str]
     return out
 
 
-async def contributions(org_id: str | None, agent_id: str, interaction: dict, when: datetime | None) -> list[tuple[dict, dict]]:
-    """[(key, increments)] for one call; stages the call never used are left out."""
+async def contributions(org_id: str | None, agent_id: str, doc: dict, when: datetime | None) -> list[tuple[dict, dict]]:
+    """[(key, increments)] for one stored call-log document; stages the call never used are left out."""
     if not org_id:
         return []
-    usage = interaction.get("token_usage") if isinstance(interaction.get("token_usage"), dict) else {}
+    usage = doc.get("token_usage") if isinstance(doc.get("token_usage"), dict) else {}
     amounts = {
         "llm": {
             "input_tokens": _int(usage.get("llm_input_token")),
@@ -77,7 +77,7 @@ async def contributions(org_id: str | None, agent_id: str, interaction: dict, wh
         "stt": {"audio_seconds": _int(usage.get("stt_audio_duration"))},
         "tts": {"characters": _int(usage.get("tts_characters_count"))},
     }
-    models = await _models(agent_id, interaction)
+    models = await _models(agent_id, doc)
     day = (when or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%d")
     out = []
     for kind, inc in amounts.items():
@@ -90,7 +90,7 @@ async def contributions(org_id: str | None, agent_id: str, interaction: dict, wh
             "kind": kind,
             "provider_id": provider,
             "model_id": model,
-            "test": bool(interaction.get("test")),
+            "test": bool(doc.get("is_test")),
         }
         out.append((key, {**inc, "calls": 1}))
     return out
@@ -106,18 +106,6 @@ async def apply(contribs: list[tuple[dict, dict]], sign: int = 1) -> None:
             {"$inc": {f: v * sign for f, v in inc.items()}, "$set": {"updated_at": now}},
             upsert=True,
         )
-
-
-async def record_call(*, org_id: str | None, agent_id: str, new: dict, new_when: datetime | None, old: dict | None, old_when: datetime | None) -> None:
-    """Called from call-log ingest. A retried POST for the same session replaces
-    its earlier log, so the old call's contribution is backed out first. Never
-    raises: a rollup problem must not lose the call log itself."""
-    try:
-        if old is not None:
-            await apply(await contributions(org_id, agent_id, old, old_when), -1)
-        await apply(await contributions(org_id, agent_id, new, new_when), 1)
-    except Exception:
-        logger.exception("usage rollup failed for agent=%s (call log was stored)", agent_id)
 
 
 _KEEP_KEYS = (
@@ -145,15 +133,18 @@ async def drop_stale_indexes() -> None:
 
 
 async def rebuild_from_call_logs() -> int:
-    """Recompute the whole collection from stored call logs (one-off backfill / repair)."""
+    """Recompute the whole collection from stored call logs. Call-log ingest does not touch
+    this collection (the runtime reports usage separately), so `backfill-usage` repairs drift."""
     from agents_service.call_logs.model import CallLog
+    from agents_service.call_logs.service import started_at
 
     coll = UsageRollup.get_pymongo_collection()
     await coll.delete_many({})
     await drop_stale_indexes()
     n = 0
     async for log in CallLog.find_all():
-        await apply(await contributions(log.org_id, log.agent_id, log.interaction, log.started_at or log.created_at), 1)
+        doc = log.model_dump()
+        await apply(await contributions(log.org_id, log.bot_id, doc, started_at(doc) or log.created_at), 1)
         n += 1
     return n
 

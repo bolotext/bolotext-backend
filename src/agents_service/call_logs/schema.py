@@ -5,36 +5,54 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CallLogIn(BaseModel):
-    """What the voice runtime posts when a call ends."""
+    """The call-log document the voice runtime posts when a call ends. Stored
+    as received: apart from `bot_id` every field is optional and unknown fields
+    are kept."""
 
     model_config = ConfigDict(
+        extra="allow",
         json_schema_extra={
             "example": {
-                "agent_id": "6ae2fcd6bc254d03a880f339",
-                "call_payload": {
-                    "interaction": {
-                        "source": "website",
-                        "direction": "inbound",
-                        "details": {"duration": "0:24", "session_id": "RM_abc", "start_at": "2026-10-29 12:32:02"},
-                        "test": True,
-                        "token_usage": {"llm_input_token": 742},
-                        "interaction_journey": [],
-                        "status": "completed",
-                    }
-                },
+                "conversation_id": "RM_e277X9c8dfbX",
+                "bot_id": "6ae2fcd6bc254d03a880f339",
+                "bot_type": "voice_inbound",
+                "time_zone": "Asia/Kolkata",
+                "call_status": "COMPLETED",
+                "callType": "Inbound",
+                "callStartTime": "2026-10-29 19:33:41",
+                "is_test": True,
+                "source": "website",
+                "duration": "0:36",
+                "web_uuid": "testing-web-token",
+                "hangup_reason": {"end_reason": "tts_error", "error": "tts_error", "type": "close", "reason": "user_initiated"},
+                "token_usage": {"llm_input_token": 747, "llm_output_token": 51, "stt_audio_duration": 35, "tts_characters_count": 195},
+                "conversation_log": [],
             }
-        }
+        },
     )
 
-    agent_id: str = Field(..., min_length=1, max_length=64, description="The voice agent the call belongs to.")
-    call_payload: dict[str, Any] = Field(..., description="`{ \"interaction\": { … } }` exactly as the runtime builds it.")
+    bot_id: str = Field(..., min_length=1, max_length=64, description="The voice agent the call belongs to.")
+    conversation_id: str | None = Field(None, description="The call's session id; posting it again updates the stored log.")
+
+
+class CallUsageIn(BaseModel):
+    """What the voice runtime posts, once per call, after the call log is stored,
+    so the usage dashboard counts the call. The runtime sends it only when the
+    log was newly created, so a retried log is not counted twice."""
+
+    bot_id: str = Field(..., min_length=1, max_length=64, description="The voice agent the call belongs to.")
+    day: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", description="UTC day of the call, YYYY-MM-DD.")
+    is_test: bool = False
+    environment: str | None = None
+    models: dict[str, dict[str, Any]] | None = Field(None, description="`{stt|llm|tts: {provider_id, model_id}}` the call ran on.")
+    token_usage: dict[str, Any] = Field(..., description="The call's `token_usage` block.")
 
 
 class CallLogStored(BaseModel):
     id: str
     agent_id: str
     session_id: str | None
-    created: bool = Field(description="False when an existing log for the same session was updated.")
+    created: bool = Field(description="False when an existing log for the same conversation was updated.")
 
 
 class CallLogSummary(BaseModel):
@@ -63,4 +81,4 @@ class CallLogListOut(BaseModel):
 
 
 class CallLogOut(CallLogSummary):
-    interaction: dict[str, Any] = Field(description="The stored interaction: details, token usage and the full conversation journey.")
+    log: dict[str, Any] = Field(description="The stored call-log document: details, token usage, hang-up reason and the full `conversation_log`.")

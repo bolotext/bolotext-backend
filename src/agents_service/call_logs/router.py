@@ -4,7 +4,7 @@ from common.schemas import SuccessResponse
 from fastapi import APIRouter, Depends, Path, Query
 
 from agents_service.call_logs import service
-from agents_service.call_logs.schema import CallLogIn, CallLogListOut, CallLogOut, CallLogStored
+from agents_service.call_logs.schema import CallLogIn, CallLogListOut, CallLogOut, CallLogStored, CallUsageIn
 from agents_service.core.deps import AuthContext, ServiceAuth, get_call_log_writer, get_current_auth
 
 router = APIRouter(tags=["call-logs"])
@@ -14,10 +14,10 @@ _AGENT_ID = Path(description="The voice agent's id.")
 
 @router.post("/call-logs", response_model=SuccessResponse[CallLogStored], summary="Store a finished call's log (voice runtime)")
 async def create_call_log(payload: CallLogIn, _: ServiceAuth = Depends(get_call_log_writer)) -> dict:
-    """Called by the voice runtime when a call ends. Stores the interaction
-    (details, token usage, the full conversation journey) against the agent.
-    Posting the same `session_id` for the same agent again updates the stored
-    log instead of creating a duplicate, so retries are safe.
+    """Called by the voice runtime when a call ends. Stores the call-log
+    document as posted (`bot_id` is the agent), with no further processing.
+    Posting the same `conversation_id` for the same agent again replaces the
+    stored log instead of creating a duplicate, so retries are safe.
 
     **Auth:** a non-expiring API token with the `call-log:write` scope
     (created by a Super Admin under "API tokens"); user tokens are rejected.
@@ -25,17 +25,28 @@ async def create_call_log(payload: CallLogIn, _: ServiceAuth = Depends(get_call_
     **Errors:**
     - `UNAUTHORIZED` — missing/invalid token, or a user token.
     - `FORBIDDEN` — the API token lacks the `call-log:write` scope.
-    - `NOT_FOUND` — no agent with this `agent_id`.
-    - `UNPROCESSABLE_ENTITY` — `call_payload.interaction` is missing.
+    - `NOT_FOUND` — no agent with this `bot_id`.
+    - `UNPROCESSABLE_ENTITY` — `bot_id` is missing.
     """
-    res = await service.ingest(payload.agent_id, payload.call_payload)
+    res = await service.ingest(payload)
     return success_response(code=201 if res.created else 200, message="Call log stored", data=res)
+
+
+@router.post("/call-logs/usage", response_model=SuccessResponse[None], summary="Count a finished call in platform usage (voice runtime)")
+async def record_call_usage(payload: CallUsageIn, _: ServiceAuth = Depends(get_call_log_writer)) -> dict:
+    """Called by the voice runtime right after it stored the call log, only when
+    that log was newly created. Adds the call's STT / LLM / TTS units to the
+    usage rollup. Same auth as `POST /call-logs`.
+
+    **Errors:** `NOT_FOUND` — no agent with this `bot_id`."""
+    await service.record_usage(payload)
+    return success_response(code=201, message="Usage recorded", data=None)
 
 
 @router.get("/agents/{agent_id}/call-logs", response_model=SuccessResponse[CallLogListOut], summary="List an agent's call logs")
 async def list_call_logs(
     agent_id: PydanticObjectId = _AGENT_ID,
-    q: str | None = Query(None, description="Search session id, phone numbers or web token."),
+    q: str | None = Query(None, description="Search conversation id, phone numbers or web token."),
     status: str | None = Query(None, description="e.g. completed, missed, busy, failed."),
     source: str | None = Query(None, description="phone, website or personalized_link."),
     test: bool | None = Query(None, description="Only test calls (true) or only real calls (false)."),
@@ -61,8 +72,8 @@ async def get_call_log(
     agent_id: PydanticObjectId = _AGENT_ID,
     auth: AuthContext = Depends(get_current_auth),
 ) -> dict:
-    """The stored interaction: details, hang-up reason, token usage and the
-    full conversation journey.
+    """The stored call-log document: details, hang-up reason, token usage and the
+    full conversation log.
 
     **Auth:** bearer JWT; same access as viewing the agent.
 

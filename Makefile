@@ -1,4 +1,4 @@
-.PHONY: install seed run run-prod run-frontend run-agent \
+.PHONY: install seed run run-prod run-frontend run-agent runall \
 	docker-build docker-up docker-down docker-restart
 
 install:
@@ -28,6 +28,14 @@ FRONTEND_DIR ?= ../bolotext-frontend
 run-frontend:
 	@echo 'Running the frontend dev server from $(FRONTEND_DIR)'
 	cd $(FRONTEND_DIR) && npm run dev
+
+# Backend + frontend together; Ctrl+C stops both.
+runall:
+	@echo 'Running the backend and the frontend (Ctrl+C stops both)'
+	@trap 'kill $$(jobs -p) 2>/dev/null' INT TERM EXIT; \
+	$(MAKE) run & \
+	$(MAKE) run-frontend & \
+	wait
 
 # Agent runtime lives in the sibling repo; override with AGENT_DIR=... if elsewhere.
 AGENT_DIR ?= ../bolotext-agent

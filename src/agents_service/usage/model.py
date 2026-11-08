@@ -11,7 +11,7 @@ Kind = Literal["stt", "llm", "tts"]
 class UsageRollup(Document):
     """Running totals of provider usage, one document per
     (org, UTC day, kind, provider, model, test) — deliberately not per agent,
-    so the collection stays small however many agents an organization has. Call-log ingest `$inc`s
+    so the collection stays small however many agents an organization has. The voice runtime reports each call (`POST /call-logs/usage`) and that `$inc`s
     the matching document (creating it on first use), so the Usage dashboard
     reads a few small documents instead of scanning every call log.
 

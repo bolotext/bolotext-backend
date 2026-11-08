@@ -1,43 +1,31 @@
 from datetime import datetime, timezone
-from typing import Any
 
 from beanie import Document
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pymongo import IndexModel
 
 
 class CallLog(Document):
-    """One finished call of a voice agent, as posted by the voice runtime.
-    The listing fields are lifted out of `interaction` so they can be filtered
-    and sorted; `interaction` itself (details, token usage, the whole
-    conversation journey) is kept exactly as received.
+    """One finished call of a voice agent, stored exactly as the voice runtime
+    posted it (see `CallLogIn`). Only the keys we query on are declared; every
+    other field the runtime sends (`conversation_log`, `token_usage`,
+    `hangup_reason`, `callStartTime`, …) is kept as an extra. Nothing is
+    derived at write time; list/detail views compute what they show on read.
     """
 
-    agent_id: str
+    model_config = ConfigDict(extra="allow")
+
+    bot_id: str  # the voice agent's id
     org_id: str | None = None  # copied from the agent, for tenant scoping
-    session_id: str | None = None
-    source: str | None = None  # phone / website / personalized_link
-    direction: str | None = None  # inbound / outbound
-    status: str | None = None  # completed / missed / busy / failed …
-    test: bool = False
-    duration: str | None = None  # "m:ss" as reported
-    duration_seconds: int | None = None
-    started_at: datetime | None = None
-    from_phone: str | None = None
-    to_phone: str | None = None
-    web_uuid: str | None = None
-    recording_sid: str | None = None
-    hangup_reason: str | None = None  # the end reason, for the list
-    messages: int = 0  # spoken turns in the journey
-    interaction: dict[str, Any] = Field(default_factory=dict)
+    conversation_id: str | None = None  # the call's session id
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "call_logs"
         indexes = [
-            IndexModel([("agent_id", 1), ("started_at", -1)]),
+            IndexModel([("bot_id", 1), ("callStartTime", -1)]),
             IndexModel("org_id"),
-            # A retried POST for the same session updates instead of duplicating.
-            IndexModel([("agent_id", 1), ("session_id", 1)], unique=True, partialFilterExpression={"session_id": {"$type": "string"}}),
+            # A retried POST for the same conversation updates instead of duplicating.
+            IndexModel([("bot_id", 1), ("conversation_id", 1)], unique=True, partialFilterExpression={"conversation_id": {"$type": "string"}}),
         ]
